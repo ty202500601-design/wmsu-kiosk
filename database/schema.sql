@@ -3,7 +3,7 @@ USE wmsu_canteen;
 CREATE TABLE users(id INT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(100) NOT NULL,email VARCHAR(150) NOT NULL UNIQUE,password_hash VARCHAR(255) NOT NULL,
  role ENUM('customer','vendor','admin') NOT NULL,status ENUM('active','pending','banned') NOT NULL DEFAULT 'active',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE vendors(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT NOT NULL UNIQUE,name VARCHAR(100) NOT NULL,owner_name VARCHAR(100) NOT NULL,description VARCHAR(255) NOT NULL DEFAULT '',
- phone VARCHAR(20) NOT NULL,status ENUM('pending','active','suspended','rejected') NOT NULL DEFAULT 'pending',is_open TINYINT(1) NOT NULL DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ phone VARCHAR(20) NOT NULL,gcash_number VARCHAR(30) NOT NULL DEFAULT '',gcash_name VARCHAR(100) NOT NULL DEFAULT '',maya_number VARCHAR(30) NOT NULL DEFAULT '',maya_name VARCHAR(100) NOT NULL DEFAULT '',status ENUM('pending','active','suspended','rejected') NOT NULL DEFAULT 'pending',is_open TINYINT(1) NOT NULL DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE categories(id INT AUTO_INCREMENT PRIMARY KEY,vendor_id INT NULL,name VARCHAR(60) NOT NULL,icon VARCHAR(8) NOT NULL DEFAULT '',
  UNIQUE(vendor_id,name),FOREIGN KEY(vendor_id) REFERENCES vendors(id) ON DELETE CASCADE);
@@ -26,5 +26,5 @@ CREATE TABLE notifications(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT NOT NUL
  INDEX(user_id,is_read),FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE activity_logs(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT NULL,action VARCHAR(60) NOT NULL,detail VARCHAR(255) NOT NULL DEFAULT '',ip VARCHAR(45) NOT NULL DEFAULT '',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE settings(k VARCHAR(40) PRIMARY KEY,v VARCHAR(255) NOT NULL);
-INSERT INTO settings(k,v) VALUES('canteen_name','WMSU Campus Canteen'),('open_time','07:00'),('close_time','18:00'),('pay_cash','1'),('pay_gcash','1'),('pay_maya','0');
+INSERT INTO settings(k,v) VALUES('canteen_name','WMSU Campus Canteen'),('open_time','07:00'),('close_time','18:00'),('pay_cash','1'),('pay_gcash','1'),('pay_maya','0'),('gcash_number','0917 123 4567'),('gcash_name','WMSU Campus Canteen'),('maya_number','0918 123 4567'),('maya_name','WMSU Campus Canteen');
 INSERT INTO categories(vendor_id,name,icon) VALUES(NULL,'Rice Meals','🍚'),(NULL,'Burgers & Sandwiches','🍔'),(NULL,'Snacks','🍟'),(NULL,'Drinks','🥤'),(NULL,'Desserts','🍨') ON DUPLICATE KEY UPDATE name=name;

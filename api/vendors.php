@@ -4,12 +4,12 @@ $m = $_SERVER['REQUEST_METHOD']; $u = me();
 if ($m === 'GET') {
   if (isset($_GET['me'])) {
     $u = need_role('vendor');
-    $v = q('SELECT id,name,owner_name,description,phone,status,is_open FROM vendors WHERE user_id=?', [$u['id']])->fetch();
+    $v = q('SELECT id,name,owner_name,description,phone,gcash_number,gcash_name,maya_number,maya_name,status,is_open FROM vendors WHERE user_id=?', [$u['id']])->fetch();
     if (!$v) fail('Vendor record not found for this account.', 404);
     respond($v);
   }
   if (($_GET['scope'] ?? '') === 'all') { need_role('admin'); respond(q('SELECT v.*,u.email FROM vendors v JOIN users u ON u.id=v.user_id ORDER BY v.id DESC')->fetchAll()); }
-  respond(q("SELECT id,name,description,is_open FROM vendors WHERE status='active' ORDER BY name")->fetchAll());
+  respond(q("SELECT id,name,description,is_open,gcash_number,gcash_name,maya_number,maya_name FROM vendors WHERE status='active' ORDER BY name")->fetchAll());
 }
 if ($m === 'POST' && ($_GET['action'] ?? '') === 'apply') {
   $b = body(); $em = email($b); $pw = password($b); $stall = str($b, 'stall_name', 2, 100); $owner = str($b, 'owner_name', 2, 100); $ph = phone($b);
@@ -23,10 +23,10 @@ if ($m === 'POST' && ($_GET['action'] ?? '') === 'apply') {
 $u = need_role('vendor', 'admin'); $id = id();
 if ($m === 'PATCH') { $b = body(); $set = []; $p = [];
   if ($u['role'] === 'vendor') { if ($id !== my_vendor_id($u)) fail('You can only edit your own profile.', 403);
-    foreach (['name' => [2, 100], 'description' => [0, 255]] as $k => [$a, $z]) if (isset($b[$k])) { $set[] = "$k=?"; $p[] = str($b, $k, $a, $z, false) ?? ''; }
+    foreach (['name' => [2, 100], 'description' => [0, 255], 'gcash_number' => [0, 30], 'gcash_name' => [0, 100], 'maya_number' => [0, 30], 'maya_name' => [0, 100]] as $k => [$a, $z]) if (isset($b[$k])) { $set[] = "$k=?"; $p[] = str($b, $k, $a, $z, false) ?? ''; }
     if (isset($b['phone'])) { $set[] = 'phone=?'; $p[] = phone($b); } if (isset($b['is_open'])) { $set[] = 'is_open=?'; $p[] = $b['is_open'] ? 1 : 0; }
   } else {
-    foreach (['name' => [2, 100], 'description' => [0, 255]] as $k => [$a, $z]) if (isset($b[$k])) { $set[] = "$k=?"; $p[] = str($b, $k, $a, $z, false) ?? ''; }
+    foreach (['name' => [2, 100], 'description' => [0, 255], 'gcash_number' => [0, 30], 'gcash_name' => [0, 100], 'maya_number' => [0, 30], 'maya_name' => [0, 100]] as $k => [$a, $z]) if (isset($b[$k])) { $set[] = "$k=?"; $p[] = str($b, $k, $a, $z, false) ?? ''; }
     if (isset($b['status'])) { $set[] = 'status=?'; $p[] = $st = one_of($b, 'status', ['pending', 'active', 'suspended', 'rejected']); }
   }
   if (!$set) fail('Nothing to update.', 422); $p[] = $id; q('UPDATE vendors SET ' . implode(',', $set) . ' WHERE id=?', $p);

@@ -12,7 +12,7 @@ const STAFF=B.role==='vendor'||B.role==='admin';
 const ST_IN={'Pending Payment':'pending','Confirmed':'pending','Preparing':'preparing','Ready for Pickup':'ready','Completed':'completed','Cancelled':'rejected'};
 const when=t=>String(t||'').replace(' ','T');
 const pick=m=>Object.fromEntries(Object.entries(m).filter(([,v])=>v!==undefined));
-const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code,vendorId:+o.vendor_id,vendorName:o.vendor_name||'',items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',time:when(o.created_at)});
+const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code,vendorId:+o.vendor_id,vendorName:o.vendor_name||'',gcashNumber:o.gcash_number||'',gcashName:o.gcash_name||'',mayaNumber:o.maya_number||'',mayaName:o.maya_name||'',items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',time:when(o.created_at)});
 let _csrf=null;
 const API={
   async csrf(){if(!_csrf)_csrf=(await this.f('csrf',{noCsrf:true})).csrf;return _csrf},
@@ -31,7 +31,7 @@ const API={
    switch(t){
    case'vendors':{let rows=await this.f('vendors',B.role==='admin'?{q:{scope:'all'}}:{});
      if(B.role==='vendor'){const me=await this.f('vendors',{q:{me:1}});rows=rows.filter(x=>+x.id!==+me.id);rows.push(me)}
-     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||''}))}
+     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||'',gcashNumber:x.gcash_number||'',gcashName:x.gcash_name||'',mayaNumber:x.maya_number||'',mayaName:x.maya_name||''}))}
    case'applications':return (await this.f('vendors',{q:{scope:'all'}})).map(x=>({id:+x.id,stall:x.name,owner:x.owner_name,email:x.email,phone:x.phone,status:x.status==='pending'?'pending':x.status==='rejected'?'rejected':'approved'}));
    case'categories':return (await this.f('categories',B.role==='vendor'?{q:{vendor_id:SES()?.vendorId}}:{})).map(c=>({id:+c.id,vendorId:c.vendor_id==null?null:+c.vendor_id,name:c.name,icon:c.icon||'🍽️'}));
    case'foods':{const [rows,cs]=await Promise.all([this.f('foods',STAFF?{q:{manage:1}}:{}),this.list('categories')]);
@@ -39,7 +39,7 @@ const API={
    case'orders':return B.role==='customer'?[]:(await this.f('orders')).map(mapOrder);
    case'payments':return (await this.f('payments')).map(p=>({id:+p.id,orderId:+p.order_id,no:p.order_no,vendorId:+p.vendor_id,method:p.method,amount:+p.amount,status:p.status,ref:p.reference||'',orderStatus:p.order_status}));
    case'users':return this.f('users');
-   case'settings':{const s=await this.f('settings');return [{id:1,canteen:s.canteen_name,open:s.open_time,close:s.close_time,cash:s.pay_cash==='1',gcash:s.pay_gcash==='1',maya:s.pay_maya==='1'}]}
+   case'settings':{const s=await this.f('settings');return [{id:1,canteen:s.canteen_name,open:s.open_time,close:s.close_time,cash:s.pay_cash==='1',gcash:s.pay_gcash==='1',maya:s.pay_maya==='1',gcashNumber:s.gcash_number||'',gcashName:s.gcash_name||'',mayaNumber:s.maya_number||'',mayaName:s.maya_name||''}]}
    }throw new Error('Unknown resource: '+t)},
   async order(no,code){const d=await this.f('orders',{q:{order_no:no,code}});const list=Array.isArray(d)?d:[d];return list.map(o=>mapOrder({...o,track_code:code}))},
   async save(t,it){const id=it.id;
@@ -47,10 +47,10 @@ const API={
    case'categories':{const b=pick({name:it.name,icon:it.icon});return id?this.f('categories',{m:'PATCH',q:{id},b}):this.f('categories',{m:'POST',b})}
    case'foods':{const b=pick({name:it.name,description:it.desc,price:it.price,is_available:it.available,category_id:it.catId});
      return id?this.f('foods',{m:'PATCH',q:{id},b}):this.f('foods',{m:'POST',b:{...b,vendor_id:it.vendorId}})}
-   case'vendors':return this.f('vendors',{m:'PATCH',q:{id},b:pick({name:it.name,description:it.desc,phone:it.phone,is_open:it.open,status:it.status})});
+   case'vendors':return this.f('vendors',{m:'PATCH',q:{id},b:pick({name:it.name,description:it.desc,phone:it.phone,is_open:it.open,status:it.status,gcash_number:it.gcashNumber,gcash_name:it.gcashName,maya_number:it.mayaNumber,maya_name:it.mayaName})});
    case'applications':return this.f('vendors',{m:'PATCH',q:{id},b:{status:it.status==='approved'?'active':'rejected'}});
    case'users':return id?this.f('users',{m:'PATCH',q:{id},b:pick({status:it.status})}):this.f('users',{m:'POST',b:{name:it.name,email:it.email,password:it.password,role:it.role}});
-   case'settings':return this.f('settings',{m:'PATCH',b:{canteen_name:it.canteen,open_time:it.open,close_time:it.close,pay_cash:!!it.cash,pay_gcash:!!it.gcash,pay_maya:!!it.maya}});
+   case'settings':return this.f('settings',{m:'PATCH',b:{canteen_name:it.canteen,open_time:it.open,close_time:it.close,pay_cash:!!it.cash,pay_gcash:!!it.gcash,pay_maya:!!it.maya,gcash_number:it.gcashNumber||'',gcash_name:it.gcashName||'',maya_number:it.mayaNumber||'',maya_name:it.mayaName||''}});
    case'orders':return id?this.setStatus(id,it.status):this.place(it);
    }throw new Error('Unknown resource: '+t)},
   async remove(t,id){if(!['categories','foods','users','vendors'].includes(t))throw new Error('Cannot delete '+t);return this.f(t,{m:'DELETE',q:{id}})},
@@ -127,6 +127,7 @@ const confirmBox=(msg,ok='Yes')=>modal('Please confirm',`<p class="mb-0">${msg}<
 function onForm(sel,fn){const f=$(sel);f.addEventListener('submit',async e=>{e.preventDefault();if(!f.checkValidity()){f.classList.add('was-validated');return}
  const b=f.querySelector('button:not([type=button])');b&&(b.disabled=true);try{await fn(Object.fromEntries(new FormData(f)))}catch(x){toast('Something went wrong: '+x.message,'danger')}b&&(b.disabled=false)})}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-act]');if(b&&acts[b.dataset.act]){try{await acts[b.dataset.act](b.dataset,b)}catch(x){if(b.type==='checkbox')b.checked=!b.checked;toast(x.message,'danger')}}});
+acts.copy=async d=>{try{await navigator.clipboard.writeText(d.v);toast('Copied to clipboard: '+d.v,'success')}catch{toast('Copy failed, please copy manually.','danger')}};
 acts.logout=async()=>{try{await API.f('auth',{m:'POST',q:{action:'logout'}})}catch{}sessionStorage.removeItem('wmsu_session');location='login.html'};
 
 const payBtns=(id,method,ps,os)=>{const b=[],add=(a,l,k,icon)=>b.push(`<button class="btn btn-sm btn-${k}" data-act="payA" data-id="${id}" data-a="${a}"><i class="bi bi-${icon}"></i> ${l}</button>`);

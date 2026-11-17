@@ -10,9 +10,9 @@ function with_items(array $rows, bool $public = false): array { if (!$rows) retu
 
 if ($m === 'GET') {
   if (isset($_GET['order_no'])) {
-    $target = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
+    $target = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
     if (!$target) fail('Order not found. Check the order number and tracking code.', 404);
-    $all = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
+    $all = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
     respond(with_items($all, true));
   }
   $u = need_role('customer', 'vendor', 'admin'); $w = ['1=1']; $p = [];

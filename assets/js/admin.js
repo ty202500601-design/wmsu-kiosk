@@ -193,15 +193,34 @@ A.settings=async v=>{
         <div class="col"><label class="form-label">Opening Time</label><input type="time" name="open" class="form-control" value="${esc(s.open)}" required></div>
         <div class="col"><label class="form-label">Closing Time</label><input type="time" name="close" class="form-control" value="${esc(s.close)}" required></div>
       </div>
-      <label class="form-label mb-2">Accepted Payment Methods</label>
+      <label class="form-label mb-2">Accepted Payment Methods & Account Details</label>
       <div class="card bg-light p-3 mb-4">
-        ${Object.keys(PN).map(k=>`
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="pay_cash" name="cash" ${s.cash?'checked':''}>
+          <label class="form-check-label fw-semibold" for="pay_cash">Cash at Counter</label>
+        </div>
+        <div class="border-top pt-3 mb-3">
           <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="pay_${k}" name="${k}" ${s[k]?'checked':''}>
-            <label class="form-check-label fw-semibold" for="pay_${k}">${PN[k]}</label>
-          </div>`).join('')}
+            <input class="form-check-input" type="checkbox" id="pay_gcash" name="gcash" ${s.gcash?'checked':''}>
+            <label class="form-check-label fw-semibold" for="pay_gcash">GCash</label>
+          </div>
+          <div class="row g-2 ps-4">
+            <div class="col-sm-6"><label class="form-label small mb-1">GCash Mobile Number</label><input name="gcashNumber" class="form-control form-control-sm" placeholder="e.g. 0917 123 4567" value="${esc(s.gcashNumber)}"></div>
+            <div class="col-sm-6"><label class="form-label small mb-1">GCash Account Name</label><input name="gcashName" class="form-control form-control-sm" placeholder="e.g. WMSU Campus Canteen" value="${esc(s.gcashName)}"></div>
+          </div>
+        </div>
+        <div class="border-top pt-3">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="pay_maya" name="maya" ${s.maya?'checked':''}>
+            <label class="form-check-label fw-semibold" for="pay_maya">Maya</label>
+          </div>
+          <div class="row g-2 ps-4">
+            <div class="col-sm-6"><label class="form-label small mb-1">Maya Mobile Number</label><input name="mayaNumber" class="form-control form-control-sm" placeholder="e.g. 0918 123 4567" value="${esc(s.mayaNumber)}"></div>
+            <div class="col-sm-6"><label class="form-label small mb-1">Maya Account Name</label><input name="mayaName" class="form-control form-control-sm" placeholder="e.g. WMSU Campus Canteen" value="${esc(s.mayaName)}"></div>
+          </div>
+        </div>
       </div>
       <div><button class="btn btn-wmsu px-4">Save Settings</button></div>
     </form>`;
-  onForm('#sf',async d=>{await API.save('settings',{id:1,canteen:d.canteen,open:d.open,close:d.close,...Object.fromEntries(Object.keys(PN).map(k=>[k,!!d[k]]))});toast('Settings saved','success')});
+  onForm('#sf',async d=>{await API.save('settings',{id:1,canteen:d.canteen,open:d.open,close:d.close,gcashNumber:d.gcashNumber,gcashName:d.gcashName,mayaNumber:d.mayaNumber,mayaName:d.mayaName,...Object.fromEntries(Object.keys(PN).map(k=>[k,!!d[k]]))});toast('Settings saved','success')});
 };

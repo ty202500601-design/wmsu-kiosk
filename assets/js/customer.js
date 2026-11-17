@@ -187,10 +187,13 @@ C.checkout=async v=>{
 
 C.payment=async v=>{
   if(!cart.count())return location='cart.html';
-  const s=(await API.list('settings'))[0],on=Object.keys(PAYS).filter(k=>s[k]);
+  const [[s],vs]=await Promise.all([API.list('settings'),API.list('vendors')]),on=Object.keys(PAYS).filter(k=>s[k]);
+  const byV={};
+  cart.get().items.forEach(i=>{if(!byV[i.vendorId])byV[i.vendorId]=0;byV[i.vendorId]+=i.price*i.qty});
+  const stallTotals=Object.entries(byV).map(([vid,tot])=>({ven:vs.find(x=>x.id===+vid)||{},tot}));
   v.innerHTML=head('Choose payment',`Total to pay: <b class="text-wmsu">${peso(cart.total())}</b>`)+`
     <form id="pf" novalidate>
-      <div class="row g-3 mb-4">
+      <div class="row g-3 mb-3">
         ${on.map((k,i)=>`
           <div class="col-6 col-lg-3">
             <label class="w-100 h-100">
@@ -202,12 +205,24 @@ C.payment=async v=>{
             </label>
           </div>`).join('')}
       </div>
+      <div id="pinfo" class="mb-4"></div>
       <div class="text-danger small mb-3 d-none" id="perr">Please select a payment method.</div>
       <div class="d-flex gap-2">
         <a href="checkout.html" class="btn btn-light btn-lg">Back</a>
         <button class="btn btn-wmsu btn-lg px-5">Place Order</button>
       </div>
     </form>`;
+  const updateInfo=m=>{
+    if(m==='cash')$('#pinfo').innerHTML=`<div class="alert alert-light border small mb-0"><i class="bi bi-info-circle text-wmsu me-1"></i> Pay <b>${peso(cart.total())}</b> directly at the stall counter(s) when your order is called.</div>`;
+    else if(m==='gcash'||m==='maya'){
+      $('#pinfo').innerHTML=`<div class="card bg-light p-3 border small"><div class="fw-bold mb-2"><i class="bi bi-phone text-wmsu me-1"></i> ${PAYS[m][1]} Payment Breakdown (${stallTotals.length} stall${stallTotals.length>1?'s':''})</div>${stallTotals.map(({ven,tot})=>{
+        const num=(m==='gcash'?ven.gcashNumber:ven.mayaNumber)||(m==='gcash'?s.gcashNumber:s.mayaNumber)||'';
+        const name=(m==='gcash'?ven.gcashName:ven.mayaName)||(m==='gcash'?s.gcashName:s.mayaName)||'';
+        return `<div class="d-flex justify-content-between align-items-center py-1 border-bottom"><span><b>${esc(ven.name||'Stall')}</b> ${num?`→ ${esc(num)}${name?` (${esc(name)})`:''}`:'(ask counter)'}</span><b class="text-wmsu">${peso(tot)}</b></div>`;
+      }).join('')}<div class="text-muted mt-2">You will send each stall's exact amount to their ${PAYS[m][1]} account and enter the reference number(s) on the next screen.</div></div>`;
+    }else $('#pinfo').innerHTML='';
+  };
+  document.querySelectorAll('input[name="pay"]').forEach(el=>el.addEventListener('change',e=>{ $('#perr').classList.add('d-none'); updateInfo(e.target.value); }));
   onForm('#pf',async d=>{
     if(!d.pay)return $('#perr').classList.remove('d-none');
     const c=cart.get(),dr=store.get('draft',{});
@@ -232,43 +247,84 @@ const getOrders=async()=>{
 const payNote=o=>o.pay==='cash'?(o.payStatus==='Paid'?'Payment received.':'Please pay at the stall counter(s) when called.'):o.payStatus==='Paid'?'Payment received.':o.payStatus==='Pending Verification'?'Reference received. Stall(s) will verify shortly.':'';
 
 C.confirmation=async v=>{
-  const orders=await getOrders();
+  const [orders,settings]=await Promise.all([getOrders(),API.list('settings').then(a=>a[0]||{}).catch(()=>({}))]);
   if(!orders||!orders.length)return v.innerHTML=empty('receipt','No order found.','<a class="btn btn-wmsu" href="vendors.html">Order now</a>');
   const primary=orders[0];
   const grandTotal=orders.reduce((sum,o)=>sum+o.total,0);
-  const needRef=primary.pay!=='cash'&&orders.some(o=>['Unpaid','Failed'].includes(o.payStatus));
+  const isEwallet=primary.pay!=='cash';
   v.innerHTML=`
-    <div class="text-center card p-5 mx-auto" style="max-width:640px">
+    <div class="text-center card p-4 p-md-5 mx-auto" style="max-width:680px">
       <i class="bi bi-check-circle-fill text-success" style="font-size:4rem"></i>
       <h3 class="fw-bold mt-2">Order Placed!</h3>
       <p class="text-muted mb-1">Your Tracking Code</p>
-      <div class="order-no mb-3">${esc(primary.code)}</div>
-      <div class="card bg-light p-3 my-3 text-start">
-        <div class="fw-bold mb-2">Stall Orders (${orders.length}):</div>
-        ${orders.map(o=>`
-          <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-            <div><span class="badge-status badge-neutral me-2">${esc(o.no)}</span><b>${esc(o.vendorName||'Stall')}</b></div>
-            <span class="text-wmsu fw-bold">${peso(o.total)}</span>
-          </div>`).join('')}
-        <div class="d-flex justify-content-between mt-2 pt-1 fs-5"><b>Grand Total</b><b class="text-wmsu">${peso(grandTotal)}</b></div>
+      <div class="order-no mb-2">${esc(primary.code)}</div>
+      <p class="text-muted small mb-4">${esc(primary.type)} · ${PAYS[primary.pay]?.[1]||esc(primary.pay)} · Grand Total: <b class="text-wmsu">${peso(grandTotal)}</b></p>
+
+      <div class="text-start mb-4">
+        <div class="fw-bold mb-2">Stall Orders & Payment (${orders.length}):</div>
+        ${orders.map(o=>{
+          const ewNum=(o.pay==='gcash'?o.gcashNumber:o.mayaNumber)||(o.pay==='gcash'?settings.gcashNumber:settings.mayaNumber)||'';
+          const ewName=(o.pay==='gcash'?o.gcashName:o.mayaName)||(o.pay==='gcash'?settings.gcashName:settings.mayaName)||'';
+          const needRef=isEwallet&&['Unpaid','Failed'].includes(o.payStatus)&&o.orderStatus!=='Cancelled';
+          return `
+            <div class="card bg-light p-3 mb-3 border">
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pb-2 border-bottom">
+                <div>
+                  <span class="badge-status badge-neutral me-1">#${esc(o.no)}</span>
+                  <strong class="fs-6"><i class="bi bi-shop text-wmsu me-1"></i>${esc(o.vendorName||'Stall')}</strong>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  ${badge(o.payStatus)}
+                  <b class="text-wmsu fs-5">${peso(o.total)}</b>
+                </div>
+              </div>
+              <div class="small text-muted py-2">
+                ${o.items.map(i=>`${i.qty}× ${esc(i.name)}`).join(', ')}
+              </div>
+              ${needRef?`
+                <div class="card p-3 bg-white border mt-1">
+                  ${o.payStatus==='Failed'?'<div class="alert alert-danger py-2 small mb-2">Previous reference could not be verified. Please submit a valid reference number.</div>':''}
+                  <div class="small mb-2">Send exact amount <b class="text-wmsu">${peso(o.total)}</b> via <b>${PAYS[o.pay]?.[1]||'e-wallet'}</b> to:</div>
+                  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 p-2 bg-light rounded border">
+                    <div>
+                      <div class="fw-bold text-dark fs-6">${ewNum?esc(ewNum):'<span class="text-muted small">Ask stall cashier</span>'}</div>
+                      ${ewName?`<div class="small text-muted">Account Name: <b class="text-dark">${esc(ewName)}</b></div>`:''}
+                    </div>
+                    ${ewNum?`<button type="button" class="btn btn-sm btn-outline-wmsu" data-act="copy" data-v="${esc(ewNum)}"><i class="bi bi-clipboard"></i> Copy</button>`:''}
+                  </div>
+                  <form class="rf-stall" data-no="${esc(o.no)}" data-code="${esc(primary.code)}" novalidate>
+                    <label class="form-label small mb-1">Enter ${PAYS[o.pay]?.[1]||'e-wallet'} Reference No. for ${esc(o.vendorName||'this stall')}:</label>
+                    <div class="input-group input-group-sm">
+                      <input name="ref" class="form-control" pattern="[A-Za-z0-9\\-]{4,60}" minlength="4" maxlength="60" placeholder="e.g. 1234567890123" required>
+                      <button class="btn btn-wmsu px-3">Submit</button>
+                    </div>
+                    <div class="invalid-feedback">Letters, numbers and dashes only (4-60).</div>
+                  </form>
+                </div>`:
+              isEwallet&&o.payStatus==='Pending Verification'?`<div class="small text-success fw-semibold mt-1"><i class="bi bi-check-circle me-1"></i> Reference submitted: <code>${esc(o.ref)}</code> · Waiting for ${esc(o.vendorName||'stall')} to verify.</div>`:
+              isEwallet&&o.payStatus==='Paid'?`<div class="small text-success fw-semibold mt-1"><i class="bi bi-patch-check-fill me-1"></i> Payment verified by ${esc(o.vendorName||'stall')}.</div>`:
+              `<div class="small text-muted mt-1"><i class="bi bi-cash-coin me-1"></i> ${payNote(o)}</div>`}
+            </div>`;
+        }).join('')}
       </div>
-      <p class="text-muted mb-1">${esc(primary.type)} · ${PAYS[primary.pay]?.[1]||esc(primary.pay)}</p>
-      <p class="small text-muted mb-4">${payNote(primary)}</p>
-      ${needRef?`
-        <form id="rf" class="mb-4 text-start" novalidate>
-          <label class="form-label">Send payment (${peso(grandTotal)}) via ${PAYS[primary.pay]?.[1]||'e-wallet'}, then enter reference number:</label>
-          <div class="input-group">
-            <input name="ref" class="form-control" pattern="[A-Za-z0-9\\-]{4,60}" minlength="4" maxlength="60" placeholder="e.g. 123456789" required>
-            <button class="btn btn-wmsu">Submit</button>
-          </div>
-          <div class="invalid-feedback">Letters, numbers and dashes only (4-60).</div>
-        </form>`:''}
+
       <div class="d-grid gap-2">
         <a class="btn btn-wmsu btn-lg" href="tracking.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-geo-alt me-1"></i> Track Order Status</a>
         <a class="btn btn-light" href="receipt.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-receipt me-1"></i> View Receipt</a>
       </div>
     </div>`;
-  if(needRef)onForm('#rf',async d=>{await API.submitRef(primary.no,primary.code,d.ref.trim());toast('Reference submitted','success');refresh()});
+  document.querySelectorAll('.rf-stall').forEach(f=>{
+    f.addEventListener('submit',async e=>{
+      e.preventDefault();
+      if(!f.checkValidity()){f.classList.add('was-validated');return}
+      const b=f.querySelector('button[type=submit],button:not([type=button])');b&&(b.disabled=true);
+      try{
+        await API.submitRef(f.dataset.no,f.dataset.code,f.ref.value.trim());
+        toast('Reference submitted for '+f.dataset.no,'success');
+        refresh();
+      }catch(x){toast('Something went wrong: '+x.message,'danger');b&&(b.disabled=false)}
+    });
+  });
 };
 
 C.receipt=async v=>{
@@ -325,7 +381,9 @@ C.tracking=async v=>{
       const orders=Array.isArray(r)?r:[r];
       if(!orders.length)return $('#tr').innerHTML=empty('search','No orders found.');
       const primary=orders[0];
+      const needPay=primary.pay!=='cash'&&orders.some(o=>['Unpaid','Failed'].includes(o.payStatus)&&o.orderStatus!=='Cancelled');
       $('#tr').innerHTML=`
+        ${needPay?`<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><i class="bi bi-exclamation-triangle-fill me-1"></i> <b>Payment reference required:</b> Please submit your ${PAYS[primary.pay]?.[1]||'e-wallet'} reference number so the stall can confirm your order.</div><a class="btn btn-sm btn-wmsu" href="confirmation.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}">Pay / Enter Reference</a></div>`:''}
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
           <div>
             <h4 class="mb-0 fw-bold">Tracking: <span class="text-wmsu">${esc(primary.code)}</span></h4>

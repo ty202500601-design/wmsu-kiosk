@@ -190,12 +190,24 @@ V.profile=async v=>{
   v.innerHTML=`
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Stall Profile</h4>
-      <p class="text-muted small mb-0">Update stall information and contact details.</p>
+      <p class="text-muted small mb-0">Update stall information, contact details, and your e-wallet receiving accounts.</p>
     </div>
-    <form id="pf" class="card p-4" style="max-width:600px" novalidate>
+    <form id="pf" class="card p-4" style="max-width:640px" novalidate>
       <div class="mb-3"><label class="form-label">Stall name</label><input name="name" class="form-control" value="${esc(x.name)}" required></div>
       <div class="mb-3"><label class="form-label">Description</label><input name="desc" class="form-control" value="${esc(x.desc)}" required></div>
       <div class="mb-3"><label class="form-label">Contact number</label><input name="phone" class="form-control" pattern="[0-9 +]{7,15}" value="${esc(x.phone)}" required><div class="invalid-feedback">Enter a valid phone number.</div></div>
+      <div class="card bg-light p-3 mb-3">
+        <h6 class="fw-bold mb-2"><i class="bi bi-wallet2 text-wmsu me-1"></i> E-Wallet Payment Accounts</h6>
+        <p class="small text-muted mb-3">Customers will send their GCash or Maya payments directly to these details.</p>
+        <div class="row g-2 mb-2">
+          <div class="col-sm-6"><label class="form-label small mb-1">GCash Mobile Number</label><input name="gcashNumber" class="form-control" placeholder="e.g. 0917 123 4567" value="${esc(x.gcashNumber)}"></div>
+          <div class="col-sm-6"><label class="form-label small mb-1">GCash Account Name</label><input name="gcashName" class="form-control" placeholder="e.g. Juan Dela Cruz" value="${esc(x.gcashName)}"></div>
+        </div>
+        <div class="row g-2">
+          <div class="col-sm-6"><label class="form-label small mb-1">Maya Mobile Number</label><input name="mayaNumber" class="form-control" placeholder="e.g. 0918 123 4567" value="${esc(x.mayaNumber)}"></div>
+          <div class="col-sm-6"><label class="form-label small mb-1">Maya Account Name</label><input name="mayaName" class="form-control" placeholder="e.g. Juan Dela Cruz" value="${esc(x.mayaName)}"></div>
+        </div>
+      </div>
       <div class="form-check form-switch mb-4"><input class="form-check-input" type="checkbox" name="open" ${x.open?'checked':''}><label class="form-check-label fw-semibold">Stall is open for orders</label></div>
       <div><button class="btn btn-wmsu px-4">Save Profile</button></div>
     </form>`;
