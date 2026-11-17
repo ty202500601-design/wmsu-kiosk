@@ -15,7 +15,12 @@ try {
     if (!$o) { $pdo->rollBack(); fail('Order not found.', 404); }
     if ($o['payment_method'] === 'cash' || !in_array($o['payment_status'], ['Unpaid', 'Failed'], true) || $o['order_status'] === 'Cancelled') { $pdo->rollBack(); fail('A payment reference cannot be submitted for this order.', 409); }
     $ref = str($b, 'reference', 4, 60); if (!preg_match('/^[A-Za-z0-9\-]+$/', $ref)) { $pdo->rollBack(); fail('Reference may only contain letters, numbers and dashes.', 422, ['reference' => 'Invalid format.']); }
-    q('UPDATE payments SET reference=? WHERE order_id=?', [$ref, $o['id']]); set_pay($o, 'Pending Verification', null); $pdo->commit(); respond(['payment_status' => 'Pending Verification']);
+    $sibs = q('SELECT id, order_no, user_id FROM orders WHERE track_code=? FOR UPDATE', [$o['track_code']])->fetchAll();
+    foreach ($sibs as $sib) {
+      q('UPDATE payments SET reference=? WHERE order_id=?', [$ref, $sib['id']]);
+      set_pay($sib, 'Pending Verification', null);
+    }
+    $pdo->commit(); respond(['payment_status' => 'Pending Verification']);
   }
   $u = need_role('vendor', 'admin'); $o = q('SELECT * FROM orders WHERE id=? FOR UPDATE', [id('order_id')])->fetch();
   if (!$o || ($u['role'] === 'vendor' && (int)$o['vendor_id'] !== my_vendor_id($u))) { $pdo->rollBack(); fail('Order not found.', 404); }

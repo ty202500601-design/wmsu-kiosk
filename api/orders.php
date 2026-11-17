@@ -9,8 +9,12 @@ function with_items(array $rows, bool $public = false): array { if (!$rows) retu
   foreach ($rows as &$r) { $r['items'] = $g[$r['id']] ?? []; if ($public) unset($r['user_id'], $r['track_code']); } return $rows; }
 
 if ($m === 'GET') {
-  if (isset($_GET['order_no'])) { $o = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
-    if (!$o) fail('Order not found. Check the order number and tracking code.', 404); respond(with_items([$o], true)[0]); }
+  if (isset($_GET['order_no'])) {
+    $target = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
+    if (!$target) fail('Order not found. Check the order number and tracking code.', 404);
+    $all = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
+    respond(with_items($all, true));
+  }
   $u = need_role('customer', 'vendor', 'admin'); $w = ['1=1']; $p = [];
   if ($u['role'] === 'vendor') { $w[] = 'o.vendor_id=?'; $p[] = my_vendor_id($u); } elseif ($u['role'] === 'customer') { $w[] = 'o.user_id=?'; $p[] = $u['id']; }
   if (isset($_GET['id'])) { $w[] = 'o.id=?'; $p[] = id(); }
@@ -20,25 +24,49 @@ if ($m === 'GET') {
 }
 if ($m === 'POST') {
   $u = me(); $b = body();
-  $vid = (int)($b['vendor_id'] ?? 0); $v = q("SELECT id,user_id,is_open FROM vendors WHERE id=? AND status='active'", [$vid])->fetch();
-  if (!$v) fail('Vendor not found.', 404); if (!$v['is_open']) fail('This vendor is closed right now.', 409);
   $type = one_of($b, 'order_type', ['Dine-In', 'Take-Out']); $method = one_of($b, 'payment_method', methods_enabled());
   $name = !empty($b['guest_name']) ? str($b, 'guest_name', 2, 60) : ($u ? $u['name'] : 'Guest');
   $items = $b['items'] ?? null; if (!is_array($items) || !$items || count($items) > 30) fail('Your cart is empty or too large.', 422);
   $qty = []; foreach ($items as $i) { $fid = (int)($i['food_id'] ?? 0); $n = (int)($i['qty'] ?? 0); if ($fid < 1 || $n < 1 || $n > 20) fail('Invalid item or quantity.', 422); $qty[$fid] = min(20, ($qty[$fid] ?? 0) + $n); }
   $ph = implode(',', array_fill(0, count($qty), '?'));
-  $foods = q("SELECT id,name,price FROM foods WHERE vendor_id=? AND is_available=1 AND id IN($ph)", [$vid, ...array_keys($qty)])->fetchAll();
-  if (count($foods) !== count($qty)) fail('One or more items are unavailable or belong to a different vendor.', 409);
-  $cents = 0; foreach ($foods as &$f) { $f['qty'] = $qty[$f['id']]; $f['line'] = (int)round($f['price'] * 100) * $f['qty']; $cents += $f['line']; } unset($f);
-  $total = $cents / 100; $code = strtoupper(bin2hex(random_bytes(3))); $pdo = db(); $pdo->beginTransaction();
+  $foods = q("SELECT f.id, f.vendor_id, f.name, f.price, v.user_id vendor_user, v.name vendor_name, v.is_open, v.status vendor_status FROM foods f JOIN vendors v ON v.id=f.vendor_id WHERE f.is_available=1 AND f.id IN($ph)", array_keys($qty))->fetchAll();
+  if (count($foods) !== count($qty)) fail('One or more items are unavailable or not found.', 409);
+  foreach ($foods as $f) {
+    if (!$f['is_open'] || $f['vendor_status'] !== 'active') {
+      fail("Stall \"{$f['vendor_name']}\" is closed right now.", 409);
+    }
+  }
+  $by_vendor = [];
+  foreach ($foods as $f) {
+    $f['qty'] = $qty[$f['id']];
+    $f['line'] = (int)round($f['price'] * 100) * $f['qty'];
+    $by_vendor[$f['vendor_id']]['vendor'] = $f;
+    $by_vendor[$f['vendor_id']]['items'][] = $f;
+  }
+  $code = strtoupper(bin2hex(random_bytes(3)));
+  $pdo = db(); $pdo->beginTransaction();
+  $created = [];
   try {
-    q('INSERT INTO orders(order_no,track_code,vendor_id,user_id,customer_name,order_type,payment_method,subtotal,total) VALUES(?,?,?,?,?,?,?,?,?)', ['TMP' . bin2hex(random_bytes(8)), $code, $vid, $u['id'] ?? null, $name, $type, $method, $total, $total]);
-    $oid = (int)$pdo->lastInsertId(); $no = 'WM' . date('ymd') . '-' . str_pad((string)$oid, 5, '0', STR_PAD_LEFT); q('UPDATE orders SET order_no=? WHERE id=?', [$no, $oid]);
-    foreach ($foods as $f) q('INSERT INTO order_items(order_id,food_id,name,unit_price,qty,line_total) VALUES(?,?,?,?,?,?)', [$oid, $f['id'], $f['name'], $f['price'], $f['qty'], $f['line'] / 100]);
-    q("INSERT INTO payments(order_id,method,amount,status) VALUES(?,?,?, 'Unpaid')", [$oid, $method, $total]);
-    notify((int)$v['user_id'], $oid, "New order $no ($type) - ₱" . number_format($total, 2)); $pdo->commit();
+    foreach ($by_vendor as $vid => $grp) {
+      $cents = array_sum(array_column($grp['items'], 'line'));
+      $vtotal = $cents / 100;
+      q('INSERT INTO orders(order_no,track_code,vendor_id,user_id,customer_name,order_type,payment_method,subtotal,total) VALUES(?,?,?,?,?,?,?,?,?)',
+        ['TMP' . bin2hex(random_bytes(8)), $code, $vid, $u['id'] ?? null, $name, $type, $method, $vtotal, $vtotal]);
+      $oid = (int)$pdo->lastInsertId();
+      $no = 'WM' . date('ymd') . '-' . str_pad((string)$oid, 5, '0', STR_PAD_LEFT);
+      q('UPDATE orders SET order_no=? WHERE id=?', [$no, $oid]);
+      foreach ($grp['items'] as $it) {
+        q('INSERT INTO order_items(order_id,food_id,name,unit_price,qty,line_total) VALUES(?,?,?,?,?,?)',
+          [$oid, $it['id'], $it['name'], $it['price'], $it['qty'], $it['line'] / 100]);
+      }
+      q("INSERT INTO payments(order_id,method,amount,status) VALUES(?,?,?, 'Unpaid')", [$oid, $method, $vtotal]);
+      notify((int)$grp['vendor']['vendor_user'], $oid, "New order $no ($type) - ₱" . number_format($vtotal, 2));
+      $created[] = ['id' => $oid, 'order_no' => $no, 'vendor_id' => $vid, 'vendor_name' => $grp['vendor']['vendor_name'], 'total' => $vtotal];
+    }
+    $pdo->commit();
   } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
-  respond(['id' => $oid, 'order_no' => $no, 'track_code' => $code, 'total' => $total, 'order_status' => 'Pending Payment', 'payment_status' => 'Unpaid'], 201);
+  $grand_total = array_sum(array_column($created, 'total'));
+  respond(['id' => $created[0]['id'], 'order_no' => $created[0]['order_no'], 'orders' => $created, 'track_code' => $code, 'total' => $grand_total, 'order_status' => 'Pending Payment', 'payment_status' => 'Unpaid'], 201);
 }
 if ($m === 'PATCH') {
   $u = need_role('customer', 'vendor', 'admin'); $b = body(); $to = one_of($b, 'order_status', array_keys(FLOW)); $pdo = db(); $pdo->beginTransaction();
