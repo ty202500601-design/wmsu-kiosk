@@ -12,4 +12,5 @@ $p = q("SELECT p.*,o.order_no FROM payments p JOIN orders o ON o.id=p.order_id W
 if (!$p) { $pdo->rollBack(); fail('No matching pending payment.', 404); }
 if ($ok && abs((float)$p['amount'] - (float)($b['amount'] ?? -1)) > 0.001) { $pdo->rollBack(); fail('Amount mismatch.', 422); }
 $s = $ok ? 'Paid' : 'Failed'; q('UPDATE payments SET status=?,verified_at=NOW() WHERE id=?', [$s, $p['id']]); q('UPDATE orders SET payment_status=? WHERE id=?', [$s, $p['order_id']]);
+if ($ok) q("UPDATE orders SET order_status='Confirmed' WHERE id=? AND order_status='Pending Payment'", [$p['order_id']]);
 audit('payment.webhook', "{$p['order_no']} -> $s"); $pdo->commit(); respond();

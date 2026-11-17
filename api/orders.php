@@ -9,17 +9,17 @@ function with_items(array $rows, bool $public = false): array { if (!$rows) retu
   foreach ($rows as &$r) { $r['items'] = $g[$r['id']] ?? []; if ($public) unset($r['user_id'], $r['track_code']); } return $rows; }
 
 if ($m === 'GET') {
-  if (isset($_GET['order_no'])) { $o = q('SELECT o.*,v.name vendor_name FROM orders o JOIN vendors v ON v.id=o.vendor_id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
+  if (isset($_GET['order_no'])) { $o = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
     if (!$o) fail('Order not found. Check the order number and tracking code.', 404); respond(with_items([$o], true)[0]); }
   $u = need_role('customer', 'vendor', 'admin'); $w = ['1=1']; $p = [];
   if ($u['role'] === 'vendor') { $w[] = 'o.vendor_id=?'; $p[] = my_vendor_id($u); } elseif ($u['role'] === 'customer') { $w[] = 'o.user_id=?'; $p[] = $u['id']; }
   if (isset($_GET['id'])) { $w[] = 'o.id=?'; $p[] = id(); }
   if (!empty($_GET['status'])) { $w[] = 'o.order_status=?'; $p[] = one_of($_GET, 'status', array_keys(FLOW)); }
-  $rows = q('SELECT o.*,v.name vendor_name FROM orders o JOIN vendors v ON v.id=o.vendor_id WHERE ' . implode(' AND ', $w) . ' ORDER BY o.created_at DESC LIMIT 200', $p)->fetchAll();
+  $rows = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE ' . implode(' AND ', $w) . ' ORDER BY o.created_at DESC LIMIT 200', $p)->fetchAll();
   if (isset($_GET['id']) && !$rows) fail('Order not found.', 404); $rows = with_items($rows); respond(isset($_GET['id']) ? $rows[0] : $rows);
 }
 if ($m === 'POST') {
-  $u = me(); if ($u && $u['role'] !== 'customer') fail('Only customers can place orders.', 403); $b = body();
+  $u = me(); $b = body();
   $vid = (int)($b['vendor_id'] ?? 0); $v = q("SELECT id,user_id,is_open FROM vendors WHERE id=? AND status='active'", [$vid])->fetch();
   if (!$v) fail('Vendor not found.', 404); if (!$v['is_open']) fail('This vendor is closed right now.', 409);
   $type = one_of($b, 'order_type', ['Dine-In', 'Take-Out']); $method = one_of($b, 'payment_method', methods_enabled());

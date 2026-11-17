@@ -2,6 +2,7 @@
 declare(strict_types=1);
 /* Shared kernel: config, JSON responses, PDO, sessions, CSRF, auth guards, validation, audit. */
 $GLOBALS['cfg'] = require __DIR__ . '/../config/config.php';
+date_default_timezone_set($GLOBALS['cfg']['timezone'] ?? 'Asia/Manila'); // keep PHP "today" in step with the database clock
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff'); header('Cache-Control: no-store');
 if (cfg('allowed_origin')) { header('Access-Control-Allow-Origin: ' . cfg('allowed_origin')); header('Access-Control-Allow-Credentials: true');
@@ -17,7 +18,7 @@ set_exception_handler(function (Throwable $e) {
   fail(cfg('debug') ? $e->getMessage() : 'Server error. Please try again.', 500);
 });
 function db(): PDO { static $p; return $p ??= new PDO(sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', cfg('db_host'), cfg('db_name')), cfg('db_user'), cfg('db_pass'),
-  [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]); }
+  [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false, PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone='" . date('P') . "'"]); }
 function q(string $sql, array $p = []): PDOStatement { $s = db()->prepare($sql); $s->execute($p); return $s; }
 
 /* ---- Session + CSRF ---- */

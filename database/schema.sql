@@ -27,3 +27,4 @@ CREATE TABLE notifications(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT NOT NUL
 CREATE TABLE activity_logs(id INT AUTO_INCREMENT PRIMARY KEY,user_id INT NULL,action VARCHAR(60) NOT NULL,detail VARCHAR(255) NOT NULL DEFAULT '',ip VARCHAR(45) NOT NULL DEFAULT '',created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE settings(k VARCHAR(40) PRIMARY KEY,v VARCHAR(255) NOT NULL);
 INSERT INTO settings(k,v) VALUES('canteen_name','WMSU Campus Canteen'),('open_time','07:00'),('close_time','18:00'),('pay_cash','1'),('pay_gcash','1'),('pay_maya','0');
+INSERT INTO categories(vendor_id,name,icon) VALUES(NULL,'Rice Meals','🍚'),(NULL,'Burgers & Sandwiches','🍔'),(NULL,'Snacks','🍟'),(NULL,'Drinks','🥤'),(NULL,'Desserts','🍨') ON DUPLICATE KEY UPDATE name=name;

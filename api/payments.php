@@ -6,6 +6,7 @@ if ($m === 'GET') { $u = need_role('vendor', 'admin'); $w = '1=1'; $p = []; if (
 if ($m !== 'PATCH') fail('Method not allowed.', 405);
 $b = body(); $act = one_of($b, 'action', ['submit_reference', 'confirm_cash', 'verify', 'fail', 'refund']);
 function set_pay(array $o, string $s, ?int $by): void { q('UPDATE orders SET payment_status=? WHERE id=?', [$s, $o['id']]);
+  if ($s === 'Paid') q("UPDATE orders SET order_status='Confirmed' WHERE id=? AND order_status='Pending Payment'", [$o['id']]);
   q('UPDATE payments SET status=?,verified_by=?,verified_at=IF(?="Paid" OR ?="Refunded",NOW(),verified_at) WHERE order_id=?', [$s, $by, $s, $s, $o['id']]); }
 $pdo = db(); $pdo->beginTransaction();
 try {

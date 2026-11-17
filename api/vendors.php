@@ -2,7 +2,12 @@
 require __DIR__ . '/../includes/bootstrap.php';
 $m = $_SERVER['REQUEST_METHOD']; $u = me();
 if ($m === 'GET') {
-  if (isset($_GET['me'])) { $u = need_role('vendor'); respond(q('SELECT id,name,owner_name,description,phone,status,is_open FROM vendors WHERE user_id=?', [$u['id']])->fetch()); }
+  if (isset($_GET['me'])) {
+    $u = need_role('vendor');
+    $v = q('SELECT id,name,owner_name,description,phone,status,is_open FROM vendors WHERE user_id=?', [$u['id']])->fetch();
+    if (!$v) fail('Vendor record not found for this account.', 404);
+    respond($v);
+  }
   if (($_GET['scope'] ?? '') === 'all') { need_role('admin'); respond(q('SELECT v.*,u.email FROM vendors v JOIN users u ON u.id=v.user_id ORDER BY v.id DESC')->fetchAll()); }
   respond(q("SELECT id,name,description,is_open FROM vendors WHERE status='active' ORDER BY name")->fetchAll());
 }

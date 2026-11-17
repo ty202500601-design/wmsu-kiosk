@@ -1,5 +1,4 @@
 /* Core: config, API layer, shell components (header/sidebar/footer), cart, UI helpers */
-const CONFIG={USE_MOCK:true}; // false => fetch() calls to api/*.php (PHP + MySQL)
 const B=document.body.dataset, ROOT=B.root||'', PAGES={customer:{},vendor:{},admin:{}}, acts={};
 const $=(s,r=document)=>r.querySelector(s), sleep=ms=>new Promise(r=>setTimeout(r,ms)), qs=new URLSearchParams(location.search);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -7,21 +6,74 @@ const peso=n=>'₱'+Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2
 const store={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
 const SES=()=>JSON.parse(sessionStorage.getItem('wmsu_session')||'null');
 const fmt=t=>new Date(t).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'});
-let _db=store.get('wmsu_db')||structuredClone(MOCK_DATA); const persist=()=>store.set('wmsu_db',_db);
-
-/* ---- API layer: same method names work for mock and PHP ---- */
+/* ---- API layer: talks to api/*.php (PHP + MySQL) and maps backend rows to the shapes the pages use ---- */
+const STAFF=B.role==='vendor'||B.role==='admin';
+const ST_IN={'Pending Payment':'pending','Confirmed':'pending','Preparing':'preparing','Ready for Pickup':'ready','Completed':'completed','Cancelled':'rejected'};
+const when=t=>String(t||'').replace(' ','T');
+const pick=m=>Object.fromEntries(Object.entries(m).filter(([,v])=>v!==undefined));
+const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code,vendorId:+o.vendor_id,items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',time:when(o.created_at)});
+let _csrf=null;
 const API={
- async list(t){if(CONFIG.USE_MOCK){await sleep(150);return structuredClone(_db[t])}return this.f(t)},
- async save(t,it){if(!CONFIG.USE_MOCK)return this.f(t,'save',it);await sleep(150);const a=_db[t];
-  if(it.id){const i=a.findIndex(x=>x.id==it.id);a[i]={...a[i],...it}}else{it.id=Math.max(0,...a.map(x=>x.id))+1;if(t=='orders')it.no='A'+(it.id+100);a.push(it)}persist();return it},
- async remove(t,id){if(!CONFIG.USE_MOCK)return this.f(t,'delete',{id});_db[t]=_db[t].filter(x=>x.id!=id);persist();return{ok:true}},
- async login(role,u,p){if(!CONFIG.USE_MOCK)return this.f('auth','login',{role,u,p});await sleep(250);const a=MOCK_DATA.accounts[role];return a.u===u&&a.p===p?{name:a.name,vendorId:a.vendorId}:null},
- async f(t,a,b){const r=await fetch(`${ROOT}api/${t}.php${a?'?action='+a:''}`,{method:b?'POST':'GET',headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+  async csrf(){if(!_csrf)_csrf=(await this.f('csrf',{noCsrf:true})).csrf;return _csrf},
+  async f(t,o={}){const {m='GET',q,b,raw,noCsrf}=o,h={};
+   if(b!==undefined&&!raw)h['Content-Type']='application/json';
+   if(m!=='GET'&&!noCsrf)h['X-CSRF-Token']=await this.csrf();
+   let r;try{r=await fetch(`${ROOT}api/${t}.php`+(q?'?'+new URLSearchParams(q):''),{method:m,headers:h,credentials:'same-origin',body:b===undefined?undefined:raw?b:JSON.stringify(b)})}catch{throw new Error('Cannot reach the server. Check your connection.')}
+   let j=null;try{j=await r.json()}catch{}
+   if(r.status===419&&!o.retried){_csrf=null;return this.f(t,{...o,retried:true})}
+   if(!r.ok||!j||j.success===false){
+    if(r.status===401&&STAFF&&B.page!=='login'){sessionStorage.removeItem('wmsu_session');location='login.html';throw new Error('Please log in.')}
+    const fe=j&&j.errors&&Object.values(j.errors)[0];throw new Error(((j&&j.error)||'Request failed ('+r.status+').')+(fe?' '+fe:''))}
+   return j.data},
+  async me(){return (await this.f('auth')).user},
+  async list(t){
+   switch(t){
+   case'vendors':{let rows=await this.f('vendors',B.role==='admin'?{q:{scope:'all'}}:{});
+     if(B.role==='vendor'){const me=await this.f('vendors',{q:{me:1}});rows=rows.filter(x=>+x.id!==+me.id);rows.push(me)}
+     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||''}))}
+   case'applications':return (await this.f('vendors',{q:{scope:'all'}})).map(x=>({id:+x.id,stall:x.name,owner:x.owner_name,email:x.email,phone:x.phone,status:x.status==='pending'?'pending':x.status==='rejected'?'rejected':'approved'}));
+   case'categories':return (await this.f('categories',B.role==='vendor'?{q:{vendor_id:SES()?.vendorId}}:{})).map(c=>({id:+c.id,vendorId:c.vendor_id==null?null:+c.vendor_id,name:c.name,icon:c.icon||'🍽️'}));
+   case'foods':{const [rows,cs]=await Promise.all([this.f('foods',STAFF?{q:{manage:1}}:{}),this.list('categories')]);
+     return rows.map(f=>({id:+f.id,vendorId:+f.vendor_id,catId:f.category_id==null?null:+f.category_id,name:f.name,desc:f.description||'',price:+f.price,emoji:cs.find(c=>c.id===+f.category_id)?.icon||'🍽️',img:f.image?`${ROOT}uploads/foods/${f.image}`:'',available:!!+f.is_available}))}
+   case'orders':return B.role==='customer'?[]:(await this.f('orders')).map(mapOrder);
+   case'payments':return (await this.f('payments')).map(p=>({id:+p.id,orderId:+p.order_id,no:p.order_no,vendorId:+p.vendor_id,method:p.method,amount:+p.amount,status:p.status,ref:p.reference||'',orderStatus:p.order_status}));
+   case'users':return this.f('users');
+   case'settings':{const s=await this.f('settings');return [{id:1,canteen:s.canteen_name,open:s.open_time,close:s.close_time,cash:s.pay_cash==='1',gcash:s.pay_gcash==='1',maya:s.pay_maya==='1'}]}
+   }throw new Error('Unknown resource: '+t)},
+  async order(no,code){return mapOrder({...(await this.f('orders',{q:{order_no:no,code}})),track_code:code})}, // public tracking: needs order no + tracking code
+  async save(t,it){const id=it.id;
+   switch(t){
+   case'categories':{const b=pick({name:it.name,icon:it.icon});return id?this.f('categories',{m:'PATCH',q:{id},b}):this.f('categories',{m:'POST',b})}
+   case'foods':{const b=pick({name:it.name,description:it.desc,price:it.price,is_available:it.available,category_id:it.catId});
+     return id?this.f('foods',{m:'PATCH',q:{id},b}):this.f('foods',{m:'POST',b:{...b,vendor_id:it.vendorId}})}
+   case'vendors':return this.f('vendors',{m:'PATCH',q:{id},b:pick({name:it.name,description:it.desc,phone:it.phone,is_open:it.open,status:it.status})});
+   case'applications':return this.f('vendors',{m:'PATCH',q:{id},b:{status:it.status==='approved'?'active':'rejected'}});
+   case'users':return id?this.f('users',{m:'PATCH',q:{id},b:pick({status:it.status})}):this.f('users',{m:'POST',b:{name:it.name,email:it.email,password:it.password,role:it.role}});
+   case'settings':return this.f('settings',{m:'PATCH',b:{canteen_name:it.canteen,open_time:it.open,close_time:it.close,pay_cash:!!it.cash,pay_gcash:!!it.gcash,pay_maya:!!it.maya}});
+   case'orders':return id?this.setStatus(id,it.status):this.place(it);
+   }throw new Error('Unknown resource: '+t)},
+  async remove(t,id){if(!['categories','foods','users','vendors'].includes(t))throw new Error('Cannot delete '+t);return this.f(t,{m:'DELETE',q:{id}})},
+  async place(it){const r=await this.f('orders',{m:'POST',b:{vendor_id:it.vendorId,order_type:it.type,payment_method:it.pay,guest_name:it.customer,items:it.items.map(i=>({food_id:i.id,qty:i.qty}))}});
+   return {id:r.id,no:r.order_no,code:r.track_code,total:+r.total,pay:it.pay}},
+  async setStatus(id,s){const o=await this.f('orders',{q:{id}}),patch=b=>this.f('orders',{m:'PATCH',q:{id},b});
+   if(s==='preparing'){if(o.order_status==='Pending Payment')await patch({order_status:'Confirmed'});return patch({order_status:'Preparing'})}
+   if(s==='ready')return patch({order_status:'Ready for Pickup'});
+   if(s==='completed')return patch({order_status:'Completed'});
+   if(s==='rejected')return patch({order_status:'Cancelled',cancel_reason:'Declined by the vendor'});
+   throw new Error('Unknown status: '+s)},
+  pay(orderId,action){return this.f('payments',{m:'PATCH',q:{order_id:orderId},b:{action}})},
+  submitRef(no,code,reference){return this.f('payments',{m:'PATCH',b:{action:'submit_reference',order_no:no,code,reference}})},
+  upload(foodId,file){const fd=new FormData();fd.append('image',file);return this.f('foods',{m:'POST',q:{action:'image',id:foodId},b:fd,raw:true})},
+  report(type,q={}){return this.f('reports',{q:{type,from:'2000-01-01',...q}})},
+  async login(role,email,password){let d;try{d=await this.f('auth',{m:'POST',q:{action:'login'},b:{email,password}})}catch(e){toast(e.message,'danger');return null}
+   _csrf=d.csrf;
+   if(d.user.role!==role){await this.f('auth',{m:'POST',q:{action:'logout'}}).catch(()=>{});_csrf=null;toast('This account cannot sign in here.','danger');return null}
+   const r={name:d.user.name};if(role==='vendor')r.vendorId=+(await this.f('vendors',{q:{me:1}})).id;return r}
 };
 
 /* ---- Cart (localStorage) ---- */
-const cart={get:()=>store.get('cart',{vendorId:null,items:[]}),
- save(c){store.set('cart',c);updateCart()},
+const cart={get:()=>store.get('cart2',{vendorId:null,items:[]}),
+ save(c){store.set('cart2',c);updateCart()},
  count:()=>cart.get().items.reduce((s,i)=>s+i.qty,0), total:()=>cart.get().items.reduce((s,i)=>s+i.qty*i.price,0),
  async add(f,qty=1){let c=cart.get();if(c.vendorId&&c.vendorId!==f.vendorId&&c.items.length){if(!await confirmBox('Your cart has items from another vendor. Start a new cart?','Start new'))return false;c={vendorId:null,items:[]}}
   c.vendorId=f.vendorId;const i=c.items.find(x=>x.id===f.id);i?i.qty+=qty:c.items.push({id:f.id,name:f.name,price:f.price,emoji:f.emoji,qty});cart.save(c);toast(f.name+' added to cart');return true},
@@ -33,13 +85,13 @@ function updateCart(){const n=cart.count(),b=$('#cartCount'),bar=$('#cartbar');i
 /* ---- UI helpers ---- */
 const spinner='<div class="state"><div class="spinner-border text-danger"></div><p class="mt-3">Loading…</p></div>';
 const empty=(i,m,a='')=>`<div class="state"><i class="bi bi-${i}"></i><p class="mt-2">${m}</p>${a}</div>`;
-const SB={pending:'warning text-dark',preparing:'info text-dark',ready:'primary',completed:'success',rejected:'danger',active:'success',banned:'danger',suspended:'danger',approved:'success'};
+const SB={pending:'warning text-dark',preparing:'info text-dark',ready:'primary',completed:'success',rejected:'danger',active:'success',banned:'danger',suspended:'danger',approved:'success',Paid:'success',Unpaid:'secondary','Pending Verification':'warning text-dark',Failed:'danger',Refunded:'dark'};
 const badge=s=>`<span class="badge rounded-pill bg-${SB[s]||'secondary'}">${esc(s)}</span>`;
-const stat=(i,l,v)=>`<div class="col-6 col-xl-4"><div class="card stat"><i class="bi bi-${i}"></i><div><b>${v}</b><small>${l}</small></div></div></div>`;
+const stat=(i,l,v,hot)=>`<div class="col-6 col-lg"><div class="card stat ${hot?'hot':''}"><i class="bi bi-${i}"></i><div><b>${v}</b><small>${l}</small></div></div></div>`;
 const table=(cols,rows,emptyMsg='Nothing here yet.')=>rows.length?`<div class="card table-responsive"><table class="table table-hover mb-0"><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${c[1](r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:empty('inbox',emptyMsg);
 const bars=d=>{const m=Math.max(1,...d.map(x=>x[1]));return d.map(x=>`<div class="d-flex align-items-center gap-3 mb-2"><span style="width:130px" class="small text-truncate">${esc(x[0])}</span><div class="flex-grow-1"><div class="bar" style="width:${x[1]/m*100}%"></div></div><b class="small">${peso(x[1])}</b></div>`).join('')||empty('bar-chart','No data yet.')};
 const refresh=()=>boot(true);
-function toast(m,t='dark'){const e=document.createElement('div');e.className=`toast show align-items-center text-bg-${t} border-0 mb-2`;e.innerHTML=`<div class="d-flex"><div class="toast-body">${esc(m)}</div></div>`;$('#toasts').append(e);setTimeout(()=>e.remove(),2500)}
+function toast(m,t='dark'){const e=document.createElement('div');e.className=`toast show align-items-center text-bg-${t} border-0 mb-2`;e.innerHTML=`<div class="d-flex"><div class="toast-body">${esc(m)}</div></div>`;$('#toasts').append(e);setTimeout(()=>e.remove(),t==='danger'?5000:2500)}
 function modal(title,body,ok='Confirm',cls='btn-wmsu'){return new Promise(res=>{const d=document.createElement('div');d.className='modal fade';
  d.innerHTML=`<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate><div class="modal-header"><h5 class="modal-title">${title}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${body}</div><div class="modal-footer"><button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">Cancel</button><button class="btn ${cls} rounded-pill px-4">${ok}</button></div></form></div>`;
  document.body.append(d);const m=new bootstrap.Modal(d);let out=null;
@@ -48,32 +100,40 @@ function modal(title,body,ok='Confirm',cls='btn-wmsu'){return new Promise(res=>{
 const confirmBox=(msg,ok='Yes')=>modal('Please confirm',`<p class="mb-0">${msg}</p>`,ok).then(r=>!!r);
 function onForm(sel,fn){const f=$(sel);f.addEventListener('submit',async e=>{e.preventDefault();if(!f.checkValidity()){f.classList.add('was-validated');return}
  const b=f.querySelector('button:not([type=button])');b&&(b.disabled=true);try{await fn(Object.fromEntries(new FormData(f)))}catch(x){toast('Something went wrong: '+x.message,'danger')}b&&(b.disabled=false)})}
-document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(b&&acts[b.dataset.act])acts[b.dataset.act](b.dataset,b)});
-acts.logout=()=>{sessionStorage.removeItem('wmsu_session');location='login.html'};
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-act]');if(b&&acts[b.dataset.act]){try{await acts[b.dataset.act](b.dataset,b)}catch(x){if(b.type==='checkbox')b.checked=!b.checked;toast(x.message,'danger')}}});
+acts.logout=async()=>{try{await API.f('auth',{m:'POST',q:{action:'logout'}})}catch{}sessionStorage.removeItem('wmsu_session');location='login.html'};
+const payBtns=(id,method,ps,os)=>{const b=[],add=(a,l,k)=>b.push(`<button class="btn btn-sm btn-${k} rounded-pill" data-act="payA" data-id="${id}" data-a="${a}">${l}</button>`);
+ if(os==='Cancelled')return '';
+ if(method==='cash'){if(ps==='Unpaid')add('confirm_cash','Cash received','success')}
+ else if(ps==='Pending Verification'){add('verify','Verify payment','success');add('fail','Reject','outline-danger')}
+ if(B.role==='admin'&&ps==='Paid')add('refund','Refund','outline-danger');
+ return b.join(' ')};
+acts.payA=async d=>{const t={confirm_cash:'Confirm that the cash was received?',verify:'Confirm this e-wallet payment is real? Check the reference in your GCash/Maya app first.',fail:'Mark this payment as failed?',refund:'Refund this payment and cancel the order?'}[d.a];if(await confirmBox(t,'Yes')){await API.pay(+d.id,d.a);toast('Payment updated','success');refresh()}};
 
 /* ---- Shell: reusable header / sidebar / footer ---- */
-const NAV={customer:[['index.html','house','Home'],['vendors.html','shop','Vendors'],['cart.html','cart3','Cart'],['tracking.html','geo-alt','Track Order'],['history.html','clock-history','History']],
+const NAV={customer:[['vendors.html','shop','Vendors'],['tracking.html','geo-alt','Track Order'],['history.html','clock-history','History']],
  vendor:[['dashboard','speedometer2','Dashboard'],['orders','bell','Incoming Orders'],['menu','egg-fried','Food Menu'],['categories','tags','Categories'],['reports','graph-up','Sales Reports'],['profile','person-badge','Profile']],
  admin:[['dashboard','speedometer2','Dashboard'],['users','people','Users'],['vendors','shop','Vendors'],['applications','file-earmark-check','Applications'],['foods','egg-fried','Food Items'],['categories','tags','Categories'],['orders','receipt','Orders'],['payments','credit-card','Payments'],['reports','graph-up','Reports'],['settings','gear','Settings']]};
-const brand=(t)=>`<a class="brand" href="${ROOT}index.html"><span class="logo">WMSU</span><b>${t}</b></a>`; /* logo placeholder: swap for <img src="assets/img/wmsu-logo.png"> */
+const brand=(t)=>`<a class="brand" href="${ROOT}index.html"><img class="logo-img" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal"><span><span class="brand-name">WMSU</span><small>${t}</small></span></a>`; /* logo placeholder: swap for <img src="assets/img/wmsu-logo.png"> */
 function shell(){const {role,page}=B,title=document.title.split(' |')[0];
- if(page==='login'){$('#shell').innerHTML='<main id="view" class="container"></main>';return}
+ if(page==='login'||page==='apply'){$('#shell').innerHTML='<main id="view" class="container"></main>';return}
  if(role==='customer'){const a=n=>n===location.pathname.split('/').pop()?'active':'';
-  $('#shell').innerHTML=`<header class="topbar"><div class="container-xl d-flex flex-wrap align-items-center gap-3">${brand('Canteen Kiosk')}<nav class="nav ms-auto flex-wrap">${NAV.customer.map(n=>`<a class="${a(n[0])}" href="${n[0]==='index.html'?ROOT:''}${n[0]}"><i class="bi bi-${n[1]}"></i> ${n[2]}</a>`).join('')}</nav><a class="btn btn-wmsu" href="cart.html"><i class="bi bi-cart3"></i> <span id="cartCount">0</span></a></div></header><main id="view" class="container-xl py-4" style="padding-bottom:6rem!important"></main><div id="cartbar"></div><footer class="text-center text-muted small py-4">© Western Mindanao State University · Canteen Self-Service Kiosk</footer>`;updateCart();return}
+  $('#shell').innerHTML=`<header class="topbar"><div class="container-xl d-flex flex-wrap align-items-center gap-3">${brand('Canteen Kiosk')}<nav class="nav ms-auto flex-wrap">${NAV.customer.map(n=>`<a class="${a(n[0])}" href="${n[0]==='index.html'?ROOT:''}${n[0]}"><i class="bi bi-${n[1]}"></i> ${n[2]}</a>`).join('')}</nav><a class="btn btn-wmsu" href="cart.html"><i class="bi bi-cart3"></i> Cart <span class="badge bg-light text-dark ms-1" id="cartCount">0</span></a></div></header><main id="view" class="container-xl py-4" ></main><footer class="text-center text-muted small py-4">© Western Mindanao State University · Canteen Self-Service Kiosk</footer>`;updateCart();return}
  const s=SES();if(!s||s.role!==role){location='login.html';return}
  $('#shell').innerHTML=`<aside class="side no-print">${brand(role==='admin'?'Admin':'Vendor')}<hr class="d-none d-lg-block">${NAV[role].map(n=>`<a class="${n[0]===page||(page.includes('food')&&n[0]==='menu')?'active':''}" href="${n[0]}.html"><i class="bi bi-${n[1]}"></i> ${n[2]}</a>`).join('')}</aside><div class="content"><div class="top2 no-print"><h5 class="mb-0 fw-bold">${title}</h5><div><span class="me-3 text-muted"><i class="bi bi-person-circle"></i> ${esc(s.name)}</span><button class="btn btn-outline-wmsu btn-sm" data-act="logout"><i class="bi bi-box-arrow-right"></i> Logout</button></div></div><main id="view" class="p-4"></main></div>`}
-async function boot(again){if(!again){shell();if(!$('#view'))return}const v=$('#view');v.innerHTML=spinner;
+async function boot(again){if(!again){shell();if(!$('#view'))return;
+  if(STAFF&&B.page!=='login'&&B.page!=='apply'){let u=null;try{u=await API.me()}catch{}if(!u||u.role!==B.role){sessionStorage.removeItem('wmsu_session');location='login.html';return}}}const v=$('#view');if(!again)v.innerHTML=spinner;
  try{await PAGES[B.role][B.page](v)}catch(e){v.innerHTML=empty('exclamation-triangle',`Couldn't load this page (${esc(e.message)}). Check your connection and try again.`,'<button class="btn btn-wmsu mt-2" onclick="refresh()">Retry</button>')}}
 document.addEventListener('DOMContentLoaded',()=>boot());
 
 /* ---- Shared pages ---- */
-function loginPage(role,v){const d=role==='admin'?'admin / admin123':'vendor1 / vendor123';
- v.innerHTML=`<div class="login-card card p-4"><div class="text-center mb-3"><span class="logo lg">WMSU</span><h4 class="mt-3 fw-bold">${role==='admin'?'Admin':'Vendor'} Login</h4></div><form id="lf" novalidate><div class="mb-3"><label class="form-label">Username</label><input name="u" class="form-control form-control-lg" required><div class="invalid-feedback">Enter your username.</div></div><div class="mb-3"><label class="form-label">Password</label><input type="password" name="p" class="form-control form-control-lg" minlength="6" required><div class="invalid-feedback">Password must be at least 6 characters.</div></div><button class="btn btn-wmsu btn-lg w-100">Sign in</button></form><p class="small text-muted text-center mt-3 mb-1">Demo account: ${d}</p><a class="text-center small text-wmsu" href="${ROOT}index.html">Back to home</a></div>`;
- onForm('#lf',async d=>{const r=await API.login(role,d.u,d.p);if(!r)return toast('Wrong username or password.','danger');sessionStorage.setItem('wmsu_session',JSON.stringify({role,...r}));location='dashboard.html'})}
-async function catPage(v){const cs=await API.list('categories');
+function loginPage(role,v){
+ v.innerHTML=`<div class="login-card card p-4"><div class="text-center mb-3"><img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal"><h4 class="mt-3 fw-bold">${role==='admin'?'Admin':'Vendor'} Login</h4></div><form id="lf" novalidate><div class="mb-3"><label class="form-label">Email</label><input type="email" name="u" class="form-control form-control-lg" autocomplete="username" required><div class="invalid-feedback">Enter your email address.</div></div><div class="mb-3"><label class="form-label">Password</label><input type="password" name="p" class="form-control form-control-lg" minlength="8" autocomplete="current-password" required><div class="invalid-feedback">Password must be at least 8 characters.</div></div><button class="btn btn-wmsu btn-lg w-100">Sign in</button></form><p class="small text-muted text-center mt-3 mb-1">Use the account issued by the canteen administrator.</p>${role==='vendor'?'<div class="text-center mb-2"><a class="small text-wmsu fw-semibold" href="apply.html"><i class="bi bi-shop"></i> Want to sell? Apply as a vendor</a></div>':''}<a class="text-center small text-wmsu" href="${ROOT}index.html">Back to home</a></div>`;
+ onForm('#lf',async d=>{const r=await API.login(role,d.u,d.p);if(!r)return;sessionStorage.setItem('wmsu_session',JSON.stringify({role,...r}));location='dashboard.html'})}
+async function catPage(v){let cs=await API.list('categories');if(B.role==='vendor')cs=cs.filter(c=>c.vendorId!==null); // shared categories are admin-managed
  v.innerHTML=`<div class="d-flex justify-content-between mb-3"><h4 class="fw-bold">Categories</h4><button class="btn btn-wmsu" data-act="catEdit"><i class="bi bi-plus-lg"></i> Add category</button></div>`+table([['Icon',c=>c.icon],['Name',c=>esc(c.name)],['',c=>`<button class="btn btn-sm btn-outline-wmsu" data-act="catEdit" data-id="${c.id}" data-n="${esc(c.name)}" data-i="${c.icon}">Edit</button> <button class="btn btn-sm btn-light text-danger" data-act="catDel" data-id="${c.id}">Delete</button>`]],cs);}
 acts.catEdit=async d=>{const r=await modal(d.id?'Edit category':'Add category',`<label class="form-label">Name</label><input name="name" class="form-control mb-3" value="${d.n||''}" required><label class="form-label">Emoji icon</label><input name="icon" class="form-control" value="${d.i||'🍽️'}" maxlength="4" required>`,'Save');if(r){await API.save('categories',{id:d.id?+d.id:undefined,...r});toast('Category saved');refresh()}};
 acts.catDel=async d=>{if(await confirmBox('Delete this category?','Delete')){await API.remove('categories',+d.id);toast('Category deleted');refresh()}};
 function foodForm(v,vendorId){const id=+qs.get('id');return Promise.all([API.list('categories'),API.list('foods')]).then(([cs,fs])=>{const f=id?fs.find(x=>x.id===id):{emoji:'🍽️',available:true};if(!f)return v.innerHTML=empty('search','Food item not found.');
- v.innerHTML=`<h4 class="fw-bold mb-3">${id?'Edit':'Add'} food item</h4><form id="ff" class="card p-4" style="max-width:640px" novalidate><div class="mb-3"><label class="form-label">Name</label><input name="name" class="form-control" value="${esc(f.name)}" required><div class="invalid-feedback">Name is required.</div></div><div class="row"><div class="col-md-6 mb-3"><label class="form-label">Category</label><select name="catId" class="form-select" required>${cs.map(c=>`<option value="${c.id}" ${c.id===f.catId?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div><div class="col-md-6 mb-3"><label class="form-label">Price (₱)</label><input type="number" name="price" min="1" step="0.5" class="form-control" value="${f.price||''}" required><div class="invalid-feedback">Enter a price of ₱1 or more.</div></div></div><div class="mb-3"><label class="form-label">Emoji (or set image URL in database)</label><input name="emoji" class="form-control" value="${f.emoji}" required></div><div class="mb-3"><label class="form-label">Description</label><textarea name="desc" class="form-control" rows="2" required>${esc(f.desc)}</textarea><div class="invalid-feedback">Add a short description.</div></div><div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="available" ${f.available?'checked':''}><label class="form-check-label">Available for ordering</label></div><div><button class="btn btn-wmsu px-4">Save item</button> <a href="${B.role==='admin'?'foods':'menu'}.html" class="btn btn-light rounded-pill">Cancel</a></div></form>`;
- onForm('#ff',async d=>{await API.save('foods',{id:id||undefined,vendorId:id?f.vendorId:vendorId,...d,catId:+d.catId,price:+d.price,available:!!d.available});toast('Food item saved','success');setTimeout(()=>location=(B.role==='admin'?'foods':'menu')+'.html',500)})})}
+ v.innerHTML=`<h4 class="fw-bold mb-3">${id?'Edit':'Add'} food item</h4><form id="ff" class="card p-4" style="max-width:640px" novalidate><div class="mb-3"><label class="form-label">Name</label><input name="name" class="form-control" value="${esc(f.name)}" required><div class="invalid-feedback">Name is required.</div></div><div class="row"><div class="col-md-6 mb-3"><label class="form-label">Category</label><select name="catId" class="form-select" required>${cs.map(c=>`<option value="${c.id}" ${c.id===f.catId?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div><div class="col-md-6 mb-3"><label class="form-label">Price (₱)</label><input type="number" name="price" min="1" step="0.5" class="form-control" value="${f.price||''}" required><div class="invalid-feedback">Enter a price of ₱1 or more.</div></div></div><div class="mb-3"><label class="form-label">Photo (JPG, PNG or WebP, max 2 MB, optional)</label><input type="file" name="image" accept="image/jpeg,image/png,image/webp" class="form-control"></div><div class="mb-3"><label class="form-label">Description</label><textarea name="desc" class="form-control" rows="2" required>${esc(f.desc)}</textarea><div class="invalid-feedback">Add a short description.</div></div><div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" name="available" ${f.available?'checked':''}><label class="form-check-label">Available for ordering</label></div><div><button class="btn btn-wmsu px-4">Save item</button> <a href="${B.role==='admin'?'foods':'menu'}.html" class="btn btn-light rounded-pill">Cancel</a></div></form>`;
+ onForm('#ff',async d=>{if(d.image&&d.image.size>2*1024*1024)return toast('Photo must be 2 MB or smaller.','danger');const r=await API.save('foods',{id:id||undefined,vendorId:id?f.vendorId:vendorId,name:d.name,desc:d.desc,catId:+d.catId,price:+d.price,available:!!d.available});if(d.image&&d.image.size)await API.upload(id||r.id,d.image);toast('Food item saved','success');setTimeout(()=>location=(B.role==='admin'?'foods':'menu')+'.html',500)})})}
