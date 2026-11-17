@@ -23,7 +23,7 @@ if ($m === 'POST') {
   $vid = (int)($b['vendor_id'] ?? 0); $v = q("SELECT id,user_id,is_open FROM vendors WHERE id=? AND status='active'", [$vid])->fetch();
   if (!$v) fail('Vendor not found.', 404); if (!$v['is_open']) fail('This vendor is closed right now.', 409);
   $type = one_of($b, 'order_type', ['Dine-In', 'Take-Out']); $method = one_of($b, 'payment_method', methods_enabled());
-  $name = $u ? $u['name'] : str($b, 'guest_name', 2, 60);
+  $name = !empty($b['guest_name']) ? str($b, 'guest_name', 2, 60) : ($u ? $u['name'] : 'Guest');
   $items = $b['items'] ?? null; if (!is_array($items) || !$items || count($items) > 30) fail('Your cart is empty or too large.', 422);
   $qty = []; foreach ($items as $i) { $fid = (int)($i['food_id'] ?? 0); $n = (int)($i['qty'] ?? 0); if ($fid < 1 || $n < 1 || $n > 20) fail('Invalid item or quantity.', 422); $qty[$fid] = min(20, ($qty[$fid] ?? 0) + $n); }
   $ph = implode(',', array_fill(0, count($qty), '?'));
