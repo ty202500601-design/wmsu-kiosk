@@ -7,8 +7,22 @@ const FLOW={
   ready:[['completed','Complete','success','check2-circle']]
 };
 const obtn=o=>(FLOW[o.status]||[]).map(f=>`<button class="btn btn-sm btn-${f[2]}" data-act="setS" data-id="${o.id}" data-s="${f[0]}"><i class="bi bi-${f[3]}"></i> ${f[1]}</button>`).join(' ');
-acts.setS=async d=>{if(d.s==='rejected'&&!await confirmBox('Reject this order? The customer will be notified.','Reject'))return;await API.save('orders',{id:+d.id,status:d.s});toast('Order updated','success');refresh()};
-const actCell=o=>[obtn(o),payBtns(o.id,o.pay,o.payStatus,o.orderStatus)].filter(Boolean).join(' ')||'<span class="text-muted small">-</span>';
+acts.setS=async d=>{
+  if(d.s==='rejected'){
+    const r=await modal('Reject Order',`<p class="small text-muted mb-2">Tell the customer why this order cannot be fulfilled:</p><label class="form-label small">Reason</label><select name="preset" class="form-select form-select-sm mb-2"><option value="Out of stock">Out of stock</option><option value="Closing early">Closing early</option><option value="Unable to fulfill order">Unable to fulfill order</option><option value="">Other (type below)</option></select><input name="custom" class="form-control form-control-sm" maxlength="180" placeholder="Optional details or custom reason...">`,'Reject Order','btn-danger');
+    if(!r)return;
+    const reason=(r.custom||'').trim()||r.preset||'Declined by the vendor';
+    await API.save('orders',{id:+d.id,status:d.s,reason});
+    toast('Order rejected','success');refresh();return;
+  }
+  await API.save('orders',{id:+d.id,status:d.s});toast('Order updated','success');refresh();
+};
+const actCell=o=>[obtn(o),payBtns(o.id,o.pay,o.payStatus,o.orderStatus,o.ref,o.total)].filter(Boolean).join(' ')||'<span class="text-muted small">-</span>';
+const soundOn=()=>store.get('vendor_sound',true);
+const playChime=()=>{if(!soundOn())return;try{const ctx=new(window.AudioContext||window.webkitAudioContext)();[[1046.5,0],[1318.5,0.14]].forEach(([freq,delay])=>{const osc=ctx.createOscillator(),g=ctx.createGain();osc.type='sine';osc.frequency.value=freq;g.gain.setValueAtTime(0.001,ctx.currentTime+delay);g.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+delay+0.02);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+delay+0.35);osc.connect(g);g.connect(ctx.destination);osc.start(ctx.currentTime+delay);osc.stop(ctx.currentTime+delay+0.36)})}catch{}};
+const checkAlert=os=>{const cur=os.filter(o=>o.status==='pending'||o.payStatus==='Pending Verification').map(o=>o.id);if(window._knownAtt){const fresh=cur.some(id=>!window._knownAtt.includes(id));if(fresh){playChime();toast('New order or payment verification received!','success')}}window._knownAtt=cur};
+acts.tglSound=()=>{store.set('vendor_sound',!soundOn());if(soundOn())playChime();refresh()};
+const soundBtn=()=>`<button class="btn btn-sm ${soundOn()?'btn-outline-wmsu':'btn-light'}" data-act="tglSound" title="Toggle new order sound alerts"><i class="bi bi-volume-${soundOn()?'up-fill':'mute'}"></i> Sound: ${soundOn()?'On':'Off'}</button>`;
 const poll=()=>{clearInterval(window._poll);window._poll=setInterval(()=>{if(!document.hidden&&!document.querySelector('.modal.show'))refresh()},20000)};
 const ocols=[
   ['Order',o=>`<a href="order-details.html?id=${o.id}" class="fw-bold">#${o.no}</a>`],
@@ -24,6 +38,7 @@ V.login=async v=>loginPage('vendor',v);
 
 V.dashboard=async v=>{
   const [os,r,me]=await Promise.all([myOrd(),API.report('dashboard').catch(()=>null),API.list('vendors').then(a=>a.find(x=>x.id===vid()))]);
+  checkAlert(os);
   const n=s=>os.filter(o=>o.status===s).length,active=os.filter(o=>['pending','preparing','ready'].includes(o.status));
   v.innerHTML=`
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
@@ -31,9 +46,12 @@ V.dashboard=async v=>{
         <h4 class="fw-bold mb-1">${esc(me?.name||'My stall')}</h4>
         <div class="text-muted small">Live vendor operations dashboard. Updates automatically.</div>
       </div>
-      <div class="form-check form-switch fs-6 m-0">
-        <input class="form-check-input" type="checkbox" id="openSw" data-act="openSw" ${me?.open?'checked':''}>
-        <label class="form-check-label fw-semibold" for="openSw">${me?.open?'Open for orders':'Closed'}</label>
+      <div class="d-flex align-items-center gap-3">
+        ${soundBtn()}
+        <div class="form-check form-switch fs-6 m-0">
+          <input class="form-check-input" type="checkbox" id="openSw" data-act="openSw" ${me?.open?'checked':''}>
+          <label class="form-check-label fw-semibold" for="openSw">${me?.open?'Open for orders':'Closed'}</label>
+        </div>
       </div>
     </div>
     <div class="row g-3 mb-4">
@@ -54,13 +72,15 @@ V.dashboard=async v=>{
 acts.openSw=async(d,b)=>{await API.save('vendors',{id:vid(),open:b.checked});$('label[for=openSw]').textContent=b.checked?'Open for orders':'Closed';toast(b.checked?'Stall is now open':'Stall is now closed')};
 
 V.orders=async v=>{
-  const f=qs.get('s')||'all',os=(await myOrd()).filter(o=>f==='all'||o.status===f);
+  const allOs=await myOrd(), f=qs.get('s')||'all', os=allOs.filter(o=>f==='all'||o.status===f);
+  checkAlert(allOs);
   v.innerHTML=`
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
       <div>
         <h4 class="fw-bold mb-1">Incoming Orders</h4>
         <p class="text-muted small mb-0">Manage customer orders and update preparation status.</p>
       </div>
+      ${soundBtn()}
     </div>
     <div class="pills mb-4">
       ${['all','pending','preparing','ready','completed','rejected'].map(s=>`<a class="pill text-decoration-none ${s===f?'active':''}" href="?s=${s}">${s[0].toUpperCase()+s.slice(1)}</a>`).join('')}
@@ -87,7 +107,7 @@ V['order-details']=async v=>{
       ${o.items.map(i=>`<div class="d-flex justify-content-between py-1"><span>${i.qty}× ${esc(i.name)}</span><b>${peso(i.qty*i.price)}</b></div>`).join('')}
       <hr class="my-3">
       <div class="d-flex justify-content-between fs-4 mb-4"><b>Total</b><b class="text-wmsu">${peso(o.total)}</b></div>
-      <div class="d-flex flex-wrap gap-2">${[obtn(o),payBtns(o.id,o.pay,o.payStatus,o.orderStatus)].filter(Boolean).join(' ')||'<span class="text-muted">No further actions.</span>'}</div>
+      <div class="d-flex flex-wrap gap-2">${[obtn(o),payBtns(o.id,o.pay,o.payStatus,o.orderStatus,o.ref,o.total)].filter(Boolean).join(' ')||'<span class="text-muted">No further actions.</span>'}</div>
     </div>`;
 };
 
@@ -105,6 +125,7 @@ V.menu=async v=>{
       ['Item',f=>`${f.emoji} <b>${esc(f.name)}</b>`],
       ['Category',f=>esc(cs.find(c=>c.id===f.catId)?.name||'-')],
       ['Price',f=>peso(f.price)],
+      ['Stock',f=>f.stockQty==null?'<span class="text-muted small">Unlimited</span>':`<span class="badge-status badge-${f.stockQty===0?'danger':f.stockQty<=5?'pending':'neutral'}">${f.stockQty} left</span>`],
       ['Available',f=>`<div class="form-check form-switch"><input type="checkbox" class="form-check-input" data-act="avail" data-id="${f.id}" ${f.available?'checked':''}></div>`],
       ['',f=>`<div class="d-flex gap-1 justify-content-end"><a class="btn btn-sm btn-light" href="edit-food.html?id=${f.id}"><i class="bi bi-pencil"></i> Edit</a> <button class="btn btn-sm btn-light text-danger" data-act="delF" data-id="${f.id}"><i class="bi bi-trash"></i> Delete</button></div>`]
     ],m,'Your menu is empty. Add your first food item.')}`;
@@ -161,6 +182,16 @@ V.profile=async v=>{
           <div class="col-sm-6"><label class="form-label small mb-1">GCash Mobile Number</label><input name="gcashNumber" class="form-control" placeholder="e.g. 0917 123 4567" value="${esc(x.gcashNumber)}"></div>
           <div class="col-sm-6"><label class="form-label small mb-1">GCash Account Name</label><input name="gcashName" class="form-control" placeholder="e.g. Juan Dela Cruz" value="${esc(x.gcashName)}"></div>
         </div>
+        <div class="mb-3 p-2 bg-white rounded border">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label small fw-bold mb-0"><i class="bi bi-qr-code text-wmsu me-1"></i> GCash QR Code Image</label>
+            ${x.gcashQr?`<button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" data-act="delQr" data-id="${x.id}"><i class="bi bi-trash"></i> Remove QR</button>`:''}
+          </div>
+          <div id="qrPreview" class="mb-2 text-center">
+            ${x.gcashQr?`<img src="${esc(x.gcashQr)}" alt="GCash QR" style="max-height:160px;border-radius:8px;border:1px solid var(--line)">`:'<div class="text-muted small py-2">No QR code uploaded (optional, recommended for fast kiosk scanning)</div>'}
+          </div>
+          <input type="file" name="qr" id="qrInput" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm">
+        </div>
         <div class="row g-2">
           <div class="col-sm-6"><label class="form-label small mb-1">Maya Mobile Number</label><input name="mayaNumber" class="form-control" placeholder="e.g. 0918 123 4567" value="${esc(x.mayaNumber)}"></div>
           <div class="col-sm-6"><label class="form-label small mb-1">Maya Account Name</label><input name="mayaName" class="form-control" placeholder="e.g. Juan Dela Cruz" value="${esc(x.mayaName)}"></div>
@@ -174,12 +205,20 @@ V.profile=async v=>{
     if(f.size>2*1024*1024){toast('Banner image must be 2 MB or smaller.','danger');e.target.value='';return}
     $('#bannerPreview').innerHTML=`<img src="${URL.createObjectURL(f)}" alt="Banner preview" style="width:100%;height:140px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
   };
+  $('#qrInput').onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    if(f.size>2*1024*1024){toast('QR image must be 2 MB or smaller.','danger');e.target.value='';return}
+    $('#qrPreview').innerHTML=`<img src="${URL.createObjectURL(f)}" alt="QR preview" style="max-height:160px;border-radius:8px;border:1px solid var(--line)">`;
+  };
   onForm('#pf',async d=>{
     if(d.banner&&d.banner.size>2*1024*1024)return toast('Banner image must be 2 MB or smaller.','danger');
+    if(d.qr&&d.qr.size>2*1024*1024)return toast('QR image must be 2 MB or smaller.','danger');
     await API.save('vendors',{id:x.id,name:d.name,desc:d.desc,phone:d.phone,gcashNumber:d.gcashNumber,gcashName:d.gcashName,mayaNumber:d.mayaNumber,mayaName:d.mayaName,open:!!d.open});
     if(d.banner&&d.banner.size)await API.uploadBanner(x.id,d.banner);
+    if(d.qr&&d.qr.size)await API.uploadQr(x.id,d.qr);
     toast('Profile saved','success');
     refresh();
   });
 };
 acts.delBanner=async d=>{if(await confirmBox('Remove your canteen banner?','Remove')){await API.removeBanner(+d.id);toast('Banner removed');refresh()}};
+acts.delQr=async d=>{if(await confirmBox('Remove your GCash QR code?','Remove')){await API.removeQr(+d.id);toast('QR code removed');refresh()}};

@@ -12,7 +12,7 @@ const STAFF=B.role==='vendor'||B.role==='admin';
 const ST_IN={'Pending Payment':'pending','Confirmed':'pending','Preparing':'preparing','Ready for Pickup':'ready','Completed':'completed','Cancelled':'rejected'};
 const when=t=>String(t||'').replace(' ','T');
 const pick=m=>Object.fromEntries(Object.entries(m).filter(([,v])=>v!==undefined));
-const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code,vendorId:+o.vendor_id,vendorName:o.vendor_name||'',gcashNumber:o.gcash_number||'',gcashName:o.gcash_name||'',mayaNumber:o.maya_number||'',mayaName:o.maya_name||'',items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',time:when(o.created_at)});
+const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code,vendorId:+o.vendor_id,vendorName:o.vendor_name||'',gcashNumber:o.gcash_number||'',gcashName:o.gcash_name||'',gcashQr:o.gcash_qr?`${ROOT}uploads/qr/${o.gcash_qr}`:'',mayaNumber:o.maya_number||'',mayaName:o.maya_name||'',items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',cancelReason:o.cancel_reason||'',queueAhead:o.queue_ahead??null,estMinutes:o.est_minutes??null,time:when(o.created_at)});
 let _csrf=null;
 const API={
   async csrf(){if(!_csrf)_csrf=(await this.f('csrf',{noCsrf:true})).csrf;return _csrf},
@@ -31,11 +31,11 @@ const API={
    switch(t){
    case'vendors':{let rows=await this.f('vendors',B.role==='admin'?{q:{scope:'all'}}:{});
      if(B.role==='vendor'){const me=await this.f('vendors',{q:{me:1}});rows=rows.filter(x=>+x.id!==+me.id);rows.push(me)}
-     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||'',gcashNumber:x.gcash_number||'',gcashName:x.gcash_name||'',mayaNumber:x.maya_number||'',mayaName:x.maya_name||'',banner:x.banner?`${ROOT}uploads/banners/${x.banner}`:''}))}
+     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||'',gcashNumber:x.gcash_number||'',gcashName:x.gcash_name||'',gcashQr:x.gcash_qr?`${ROOT}uploads/qr/${x.gcash_qr}`:'',mayaNumber:x.maya_number||'',mayaName:x.maya_name||'',banner:x.banner?`${ROOT}uploads/banners/${x.banner}`:''}))}
    case'applications':return (await this.f('vendors',{q:{scope:'all'}})).map(x=>({id:+x.id,stall:x.name,owner:x.owner_name,email:x.email,phone:x.phone,status:x.status==='pending'?'pending':x.status==='rejected'?'rejected':'approved'}));
    case'categories':return (await this.f('categories',B.role==='vendor'?{q:{vendor_id:SES()?.vendorId}}:{})).map(c=>({id:+c.id,vendorId:c.vendor_id==null?null:+c.vendor_id,name:c.name,icon:c.icon||'🍽️'}));
    case'foods':{const [rows,cs]=await Promise.all([this.f('foods',STAFF?{q:{manage:1}}:{}),this.list('categories')]);
-     return rows.map(f=>({id:+f.id,vendorId:+f.vendor_id,catId:f.category_id==null?null:+f.category_id,name:f.name,desc:f.description||'',price:+f.price,emoji:cs.find(c=>c.id===+f.category_id)?.icon||'🍽️',img:f.image?`${ROOT}uploads/foods/${f.image}`:'',available:!!+f.is_available}))}
+     return rows.map(f=>({id:+f.id,vendorId:+f.vendor_id,catId:f.category_id==null?null:+f.category_id,name:f.name,desc:f.description||'',price:+f.price,stockQty:f.stock_qty==null?null:+f.stock_qty,emoji:cs.find(c=>c.id===+f.category_id)?.icon||'🍽️',img:f.image?`${ROOT}uploads/foods/${f.image}`:'',available:!!+f.is_available}))}
    case'orders':return B.role==='customer'?[]:(await this.f('orders')).map(mapOrder);
    case'payments':return (await this.f('payments')).map(p=>({id:+p.id,orderId:+p.order_id,no:p.order_no,vendorId:+p.vendor_id,method:p.method,amount:+p.amount,status:p.status,ref:p.reference||'',orderStatus:p.order_status}));
    case'users':return this.f('users');
@@ -45,28 +45,30 @@ const API={
   async save(t,it){const id=it.id;
    switch(t){
    case'categories':{const b=pick({name:it.name,icon:it.icon});return id?this.f('categories',{m:'PATCH',q:{id},b}):this.f('categories',{m:'POST',b})}
-   case'foods':{const b=pick({name:it.name,description:it.desc,price:it.price,is_available:it.available,category_id:it.catId});
+   case'foods':{const b=pick({name:it.name,description:it.desc,price:it.price,stock_qty:it.stockQty,is_available:it.available,category_id:it.catId});
      return id?this.f('foods',{m:'PATCH',q:{id},b}):this.f('foods',{m:'POST',b:{...b,vendor_id:it.vendorId}})}
    case'vendors':return id?this.f('vendors',{m:'PATCH',q:{id},b:pick({name:it.name,description:it.desc,phone:it.phone,is_open:it.open,status:it.status,gcash_number:it.gcashNumber,gcash_name:it.gcashName,maya_number:it.mayaNumber,maya_name:it.mayaName})}):this.f('vendors',{m:'POST',b:it});
    case'applications':return this.f('vendors',{m:'PATCH',q:{id},b:{status:it.status==='approved'?'active':'rejected'}});
-   case'users':return id?this.f('users',{m:'PATCH',q:{id},b:pick({status:it.status})}):this.f('users',{m:'POST',b:{name:it.name,email:it.email,password:it.password,role:it.role}});
-   case'settings':return this.f('settings',{m:'PATCH',b:{canteen_name:it.canteen,open_time:it.open,close_time:it.close,pay_cash:!!it.cash,pay_gcash:!!it.gcash,pay_maya:!!it.maya,gcash_number:it.gcashNumber||'',gcash_name:it.gcashName||'',maya_number:it.mayaNumber||'',maya_name:it.mayaName||''}});
-   case'orders':return id?this.setStatus(id,it.status):this.place(it);
+   case'users':return id?this.f('users',{m:'PATCH',q:{id},b:pick({status:it.status,ban_reason:it.ban_reason})}):this.f('users',{m:'POST',b:{name:it.name,email:it.email,password:it.password,role:it.role}});
+   case'settings':return this.f('settings',{m:'PATCH',b:{canteen_name:it.canteen,open_time:it.open,close_time:it.close,pay_cash:!!it.cash,pay_gcash:!!it.gcash,pay_maya:!!it.maya}});
+   case'orders':return id?this.setStatus(id,it.status,it.reason):this.place(it);
    }throw new Error('Unknown resource: '+t)},
   async remove(t,id){if(!['categories','foods','users','vendors'].includes(t))throw new Error('Cannot delete '+t);return this.f(t,{m:'DELETE',q:{id}})},
   async place(it){const r=await this.f('orders',{m:'POST',b:{order_type:it.type,payment_method:it.pay,guest_name:it.customer,items:it.items.map(i=>({food_id:i.id,qty:i.qty}))}});
    return {id:r.id,no:r.order_no,orders:r.orders||[],code:r.track_code,total:+r.total,pay:it.pay}},
-  async setStatus(id,s){const o=await this.f('orders',{q:{id}}),patch=b=>this.f('orders',{m:'PATCH',q:{id},b});
+  async setStatus(id,s,reason){const o=await this.f('orders',{q:{id}}),patch=b=>this.f('orders',{m:'PATCH',q:{id},b});
    if(s==='preparing'){if(o.order_status==='Pending Payment')await patch({order_status:'Confirmed'});return patch({order_status:'Preparing'})}
    if(s==='ready')return patch({order_status:'Ready for Pickup'});
    if(s==='completed')return patch({order_status:'Completed'});
-   if(s==='rejected')return patch({order_status:'Cancelled',cancel_reason:'Declined by the vendor'});
+   if(s==='rejected')return patch({order_status:'Cancelled',cancel_reason:reason||'Declined by the vendor'});
    throw new Error('Unknown status: '+s)},
   pay(orderId,action){return this.f('payments',{m:'PATCH',q:{order_id:orderId},b:{action}})},
   submitRef(no,code,reference){return this.f('payments',{m:'PATCH',b:{action:'submit_reference',order_no:no,code,reference}})},
   upload(foodId,file){const fd=new FormData();fd.append('image',file);return this.f('foods',{m:'POST',q:{action:'image',id:foodId},b:fd,raw:true})},
   uploadBanner(vendorId,file){const fd=new FormData();fd.append('banner',file);return this.f('vendors',{m:'POST',q:{action:'banner',id:vendorId},b:fd,raw:true})},
   removeBanner(vendorId){return this.f('vendors',{m:'DELETE',q:{action:'banner',id:vendorId}})},
+  uploadQr(vendorId,file){const fd=new FormData();fd.append('qr',file);return this.f('vendors',{m:'POST',q:{action:'qr',id:vendorId},b:fd,raw:true})},
+  removeQr(vendorId){return this.f('vendors',{m:'DELETE',q:{action:'qr',id:vendorId}})},
   report(type,q={}){return this.f('reports',{q:{type,from:'2000-01-01',...q}})},
   async login(role,email,password){let d;try{d=await this.f('auth',{m:'POST',q:{action:'login'},b:{email,password}})}catch(e){toast(e.message,'danger');return null}
    _csrf=d.csrf;
@@ -132,13 +134,12 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-act]
 acts.copy=async d=>{try{await navigator.clipboard.writeText(d.v);toast('Copied to clipboard: '+d.v,'success')}catch{toast('Copy failed, please copy manually.','danger')}};
 acts.logout=async()=>{try{await API.f('auth',{m:'POST',q:{action:'logout'}})}catch{}sessionStorage.removeItem('wmsu_session');location='login.html'};
 
-const payBtns=(id,method,ps,os)=>{const b=[],add=(a,l,k,icon)=>b.push(`<button class="btn btn-sm btn-${k}" data-act="payA" data-id="${id}" data-a="${a}"><i class="bi bi-${icon}"></i> ${l}</button>`);
- if(os==='Cancelled')return '';
+const payBtns=(id,method,ps,os,ref='',amt=0)=>{const b=[],add=(a,l,k,icon)=>b.push(`<button class="btn btn-sm btn-${k}" data-act="payA" data-id="${id}" data-a="${a}" data-ref="${esc(ref)}" data-amt="${peso(amt)}"><i class="bi bi-${icon}"></i> ${l}</button>`);
+ if(os==='Cancelled'||B.role!=='vendor')return '';
  if(method==='cash'){if(ps==='Unpaid')add('confirm_cash','Receive Cash','success','cash-coin')}
  else if(ps==='Pending Verification'){add('verify','Verify','success','check-lg');add('fail','Reject','outline-danger','x-lg')}
- if(B.role==='admin'&&ps==='Paid')add('refund','Refund','outline-danger','arrow-counterclockwise');
  return b.join(' ')};
-acts.payA=async d=>{const t={confirm_cash:'Confirm that the cash was received?',verify:'Confirm this e-wallet payment is real? Check the reference in your GCash/Maya app first.',fail:'Mark this payment as failed?',refund:'Refund this payment and cancel the order?'}[d.a];if(await confirmBox(t,'Yes')){await API.pay(+d.id,d.a);toast('Payment updated','success');refresh()}};
+acts.payA=async d=>{const t={confirm_cash:`Confirm that cash (${d.amt||''}) was received?`,verify:`<div class="alert alert-warning small mb-2"><i class="bi bi-exclamation-triangle-fill me-1"></i> <b>Verify carefully:</b> Open your GCash/Maya app or SMS and confirm you received <b>${esc(d.amt||'the exact amount')}</b> with Reference <code>${esc(d.ref||'-')}</code>.</div>Mark this e-wallet payment as Paid?`,fail:'Mark this payment as failed?',refund:'Refund this payment and cancel the order?'}[d.a];if(await confirmBox(t,'Yes')){await API.pay(+d.id,d.a);toast('Payment updated','success');refresh()}};
 
 /* ---- Shell: reusable header / sidebar / footer ---- */
 const NAV={customer:[['vendors.html','shop','Vendors'],['tracking.html','geo-alt','Track Order'],['history.html','clock-history','History']],
@@ -171,5 +172,5 @@ acts.catEdit=async d=>{const r=await modal(d.id?'Edit category':'Add category',`
 acts.catDel=async d=>{if(await confirmBox('Delete this category?','Delete')){await API.remove('categories',+d.id);toast('Category deleted');refresh()}};
 
 function foodForm(v,vendorId){const id=+qs.get('id');return Promise.all([API.list('categories'),API.list('foods')]).then(([cs,fs])=>{const f=id?fs.find(x=>x.id===id):{emoji:'🍽️',available:true};if(!f)return v.innerHTML=empty('search','Food item not found.');
- v.innerHTML=`<div class="mb-4"><h4 class="fw-bold mb-1">${id?'Edit':'Add'} Food Item</h4><p class="text-muted small mb-0">Configure food item details, price, and photo.</p></div><form id="ff" class="card p-4" style="max-width:640px" novalidate><div class="mb-3"><label class="form-label">Name</label><input name="name" class="form-control" value="${esc(f.name)}" required><div class="invalid-feedback">Name is required.</div></div><div class="row"><div class="col-md-6 mb-3"><label class="form-label">Category</label><select name="catId" class="form-select" required>${cs.map(c=>`<option value="${c.id}" ${c.id===f.catId?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div><div class="col-md-6 mb-3"><label class="form-label">Price (₱)</label><input type="number" name="price" min="1" step="0.5" class="form-control" value="${f.price||''}" required><div class="invalid-feedback">Enter a price of ₱1 or more.</div></div></div><div class="mb-3"><label class="form-label">Photo (JPG, PNG or WebP, max 2 MB, optional)</label><input type="file" name="image" accept="image/jpeg,image/png,image/webp" class="form-control"></div><div class="mb-3"><label class="form-label">Description</label><textarea name="desc" class="form-control" rows="2" required>${esc(f.desc)}</textarea><div class="invalid-feedback">Add a short description.</div></div><div class="form-check form-switch mb-4"><input class="form-check-input" type="checkbox" name="available" ${f.available?'checked':''}><label class="form-check-label fw-semibold">Available for ordering</label></div><div class="d-flex gap-2"><button class="btn btn-wmsu px-4">Save item</button> <a href="${B.role==='admin'?'foods':'menu'}.html" class="btn btn-light">Cancel</a></div></form>`;
- onForm('#ff',async d=>{if(d.image&&d.image.size>2*1024*1024)return toast('Photo must be 2 MB or smaller.','danger');const r=await API.save('foods',{id:id||undefined,vendorId:id?f.vendorId:vendorId,name:d.name,desc:d.desc,catId:+d.catId,price:+d.price,available:!!d.available});if(d.image&&d.image.size)await API.upload(id||r.id,d.image);toast('Food item saved','success');setTimeout(()=>location=(B.role==='admin'?'foods':'menu')+'.html',500)})})}
+ v.innerHTML=`<div class="mb-4"><h4 class="fw-bold mb-1">${id?'Edit':'Add'} Food Item</h4><p class="text-muted small mb-0">Configure food item details, price, stock, and photo.</p></div><form id="ff" class="card p-4" style="max-width:640px" novalidate><div class="mb-3"><label class="form-label">Name</label><input name="name" class="form-control" value="${esc(f.name)}" required><div class="invalid-feedback">Name is required.</div></div><div class="row"><div class="col-md-4 mb-3"><label class="form-label">Category</label><select name="catId" class="form-select" required>${cs.map(c=>`<option value="${c.id}" ${c.id===f.catId?'selected':''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></div><div class="col-md-4 mb-3"><label class="form-label">Price (₱)</label><input type="number" name="price" min="1" step="0.5" class="form-control" value="${f.price||''}" required><div class="invalid-feedback">Enter a price of ₱1 or more.</div></div><div class="col-md-4 mb-3"><label class="form-label">Daily Stock <span class="text-muted fw-normal">(opt.)</span></label><input type="number" name="stockQty" min="0" max="99999" class="form-control" placeholder="Unlimited" value="${f.stockQty==null?'':f.stockQty}"></div></div><div class="mb-3"><label class="form-label">Photo (JPG, PNG or WebP, max 2 MB, optional)</label><input type="file" name="image" accept="image/jpeg,image/png,image/webp" class="form-control"></div><div class="mb-3"><label class="form-label">Description</label><textarea name="desc" class="form-control" rows="2" required>${esc(f.desc)}</textarea><div class="invalid-feedback">Add a short description.</div></div><div class="form-check form-switch mb-4"><input class="form-check-input" type="checkbox" name="available" ${f.available?'checked':''}><label class="form-check-label fw-semibold">Available for ordering</label></div><div class="d-flex gap-2"><button class="btn btn-wmsu px-4">Save item</button> <a href="${B.role==='admin'?'foods':'menu'}.html" class="btn btn-light">Cancel</a></div></form>`;
+ onForm('#ff',async d=>{if(d.image&&d.image.size>2*1024*1024)return toast('Photo must be 2 MB or smaller.','danger');const stk=d.stockQty===''?null:+d.stockQty;const r=await API.save('foods',{id:id||undefined,vendorId:id?f.vendorId:vendorId,name:d.name,desc:d.desc,catId:+d.catId,price:+d.price,stockQty:stk,available:!!d.available});if(d.image&&d.image.size)await API.upload(id||r.id,d.image);toast('Food item saved','success');setTimeout(()=>location=(B.role==='admin'?'foods':'menu')+'.html',500)})})}

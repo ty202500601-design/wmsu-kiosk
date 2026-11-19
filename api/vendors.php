@@ -4,37 +4,40 @@ $m = $_SERVER['REQUEST_METHOD']; $u = me();
 if ($m === 'GET') {
   if (isset($_GET['me'])) {
     $u = need_role('vendor');
-    $v = q('SELECT id,name,owner_name,description,phone,gcash_number,gcash_name,maya_number,maya_name,banner,status,is_open FROM vendors WHERE user_id=?', [$u['id']])->fetch();
+    $v = q('SELECT id,name,owner_name,description,phone,gcash_number,gcash_name,gcash_qr,maya_number,maya_name,banner,status,is_open FROM vendors WHERE user_id=?', [$u['id']])->fetch();
     if (!$v) fail('Vendor record not found for this account.', 404);
     respond($v);
   }
   if (($_GET['scope'] ?? '') === 'all') { need_role('admin'); respond(q('SELECT v.*,u.email FROM vendors v JOIN users u ON u.id=v.user_id ORDER BY v.id DESC')->fetchAll()); }
-  respond(q("SELECT id,name,description,is_open,gcash_number,gcash_name,maya_number,maya_name,banner FROM vendors WHERE status='active' ORDER BY name")->fetchAll());
+  respond(q("SELECT id,name,description,is_open,gcash_number,gcash_name,gcash_qr,maya_number,maya_name,banner FROM vendors WHERE status='active' ORDER BY name")->fetchAll());
 }
-if (($_GET['action'] ?? '') === 'banner') {
-  $u = need_role('vendor', 'admin'); $id = id();
-  if ($u['role'] === 'vendor' && $id !== my_vendor_id($u)) fail('You can only edit your own banner.', 403);
-  $v = q('SELECT id,banner FROM vendors WHERE id=?', [$id])->fetch();
+$act = $_GET['action'] ?? '';
+if (in_array($act, ['banner', 'qr'], true)) {
+  $u = need_role('vendor'); $id = id();
+  if ($id !== my_vendor_id($u)) fail("You can only edit your own $act.", 403);
+  $col = $act === 'qr' ? 'gcash_qr' : 'banner';
+  $dir = $act === 'qr' ? 'qr' : 'banners';
+  $v = q("SELECT id,$col FROM vendors WHERE id=?", [$id])->fetch();
   if (!$v) fail('Vendor not found.', 404);
   if ($m === 'POST') {
-    $file = $_FILES['banner'] ?? $_FILES['image'] ?? null;
-    if (!$file || $file['error'] !== UPLOAD_ERR_OK) fail('Choose a banner image to upload.', 422);
-    if ($file['size'] > cfg('upload_max')) fail('Banner image must be 2 MB or smaller.', 422);
+    $file = $_FILES[$act] ?? $_FILES['image'] ?? null;
+    if (!$file || $file['error'] !== UPLOAD_ERR_OK) fail('Choose an image to upload.', 422);
+    if ($file['size'] > cfg('upload_max')) fail('Image must be 2 MB or smaller.', 422);
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
     $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'][$mime] ?? null;
     if (!$ext || !getimagesize($file['tmp_name'])) fail('Only JPG, PNG or WebP images are allowed.', 422);
     $name = bin2hex(random_bytes(12)) . ".$ext";
-    if (!move_uploaded_file($file['tmp_name'], __DIR__ . '/../uploads/banners/' . $name)) fail('Could not save the banner image.', 500);
-    if (!empty($v['banner'])) @unlink(__DIR__ . '/../uploads/banners/' . basename($v['banner']));
-    q('UPDATE vendors SET banner=? WHERE id=?', [$name, $id]);
-    audit('vendor.banner', "id=$id");
-    respond(['banner' => $name]);
+    if (!move_uploaded_file($file['tmp_name'], __DIR__ . "/../uploads/$dir/" . $name)) fail('Could not save the image.', 500);
+    if (!empty($v[$col])) @unlink(__DIR__ . "/../uploads/$dir/" . basename($v[$col]));
+    q("UPDATE vendors SET $col=? WHERE id=?", [$name, $id]);
+    audit("vendor.$act", "id=$id");
+    respond([$col => $name, $act => $name]);
   }
   if ($m === 'DELETE') {
-    if (!empty($v['banner'])) @unlink(__DIR__ . '/../uploads/banners/' . basename($v['banner']));
-    q('UPDATE vendors SET banner=NULL WHERE id=?', [$id]);
-    audit('vendor.banner.delete', "id=$id");
-    respond(['banner' => null]);
+    if (!empty($v[$col])) @unlink(__DIR__ . "/../uploads/$dir/" . basename($v[$col]));
+    q("UPDATE vendors SET $col=NULL WHERE id=?", [$id]);
+    audit("vendor.$act.delete", "id=$id");
+    respond([$col => null]);
   }
   fail('Method not allowed.', 405);
 }
@@ -73,11 +76,10 @@ if ($m === 'PATCH') { $b = body(); $set = []; $p = [];
     foreach (['name' => [2, 100], 'description' => [0, 255], 'gcash_number' => [0, 30], 'gcash_name' => [0, 100], 'maya_number' => [0, 30], 'maya_name' => [0, 100]] as $k => [$a, $z]) if (isset($b[$k])) { $set[] = "$k=?"; $p[] = str($b, $k, $a, $z, false) ?? ''; }
     if (isset($b['phone'])) { $set[] = 'phone=?'; $p[] = phone($b); } if (isset($b['is_open'])) { $set[] = 'is_open=?'; $p[] = $b['is_open'] ? 1 : 0; }
   } else {
-    foreach (['name' => [2, 100], 'description' => [0, 255], 'gcash_number' => [0, 30], 'gcash_name' => [0, 100], 'maya_number' => [0, 30], 'maya_name' => [0, 100]] as $k => [$a, $z]) if (isset($b[$k])) { $set[] = "$k=?"; $p[] = str($b, $k, $a, $z, false) ?? ''; }
     if (isset($b['status'])) { $set[] = 'status=?'; $p[] = $st = one_of($b, 'status', ['pending', 'active', 'suspended', 'rejected']); }
   }
   if (!$set) fail('Nothing to update.', 422); $p[] = $id; q('UPDATE vendors SET ' . implode(',', $set) . ' WHERE id=?', $p);
   if (isset($st)) { if ($st === 'active') q("UPDATE users SET status='active' WHERE id=(SELECT user_id FROM vendors WHERE id=?)", [$id]); audit('vendor.status', "id=$id $st"); }
   respond(); }
-if ($m === 'DELETE') { need_role('admin'); $b = q('SELECT banner FROM vendors WHERE id=?', [$id])->fetchColumn(); q('DELETE FROM users WHERE id=(SELECT user_id FROM vendors WHERE id=?)', [$id]); if ($b) @unlink(__DIR__ . '/../uploads/banners/' . basename($b)); audit('vendor.delete', "id=$id"); respond(); }
+if ($m === 'DELETE') { need_role('admin'); $vr = q('SELECT banner,gcash_qr FROM vendors WHERE id=?', [$id])->fetch(); q('DELETE FROM users WHERE id=(SELECT user_id FROM vendors WHERE id=?)', [$id]); if (!empty($vr['banner'])) @unlink(__DIR__ . '/../uploads/banners/' . basename($vr['banner'])); if (!empty($vr['gcash_qr'])) @unlink(__DIR__ . '/../uploads/qr/' . basename($vr['gcash_qr'])); audit('vendor.delete', "id=$id"); respond(); }
 fail('Method not allowed.', 405);

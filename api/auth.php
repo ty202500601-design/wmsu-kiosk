@@ -18,7 +18,7 @@ if ($act === 'login') {
   $ok = password_verify((string)($b['password'] ?? ''), $u['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuYVYKz5zKz5zKz5zKz5zKz5zKz5zKz5e'); // constant-ish time for unknown emails
   if (!$u || !$ok) { $_SESSION['lock'] = ['n' => $lock['n'] + 1, 't' => time()]; fail('Wrong email or password.', 401); }
   if ($u['status'] === 'pending') fail('Your account is waiting for admin approval.', 403);
-  if ($u['status'] === 'banned') fail('This account is disabled. Contact the canteen administrator.', 403);
+  if ($u['status'] === 'banned') fail('This account is disabled. Contact the canteen administrator.' . (!empty($u['ban_reason']) ? ' Reason: ' . $u['ban_reason'] : ''), 403);
   if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) q('UPDATE users SET password_hash=? WHERE id=?', [password_hash($b['password'], PASSWORD_DEFAULT), $u['id']]);
   session_regenerate_id(true); $_SESSION['csrf'] = bin2hex(random_bytes(32)); unset($_SESSION['lock']);
   $_SESSION['user'] = ['id' => (int)$u['id'], 'name' => $u['name'], 'email' => $u['email'], 'role' => $u['role']];

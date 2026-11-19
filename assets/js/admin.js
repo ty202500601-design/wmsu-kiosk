@@ -1,10 +1,36 @@
 /* Admin pages */
 const A=PAGES.admin, PN={cash:'Cash',gcash:'GCash',maya:'Maya'};
 const vname=(vs,id)=>esc(vs.find(v=>v.id===id)?.name||'-');
-const tgl=(t,id,s,a,b)=>`<button class="btn btn-sm btn-light" data-act="aset" data-t="${t}" data-id="${id}" data-s="${s==='active'?b:a}"><i class="bi bi-${s==='active'?'slash-circle':'check-circle'}"></i> ${s==='active'?(t==='users'?'Ban':'Suspend'):'Activate'}</button>`;
+const tgl=(t,id,s,a,b,n='')=>`<button class="btn btn-sm btn-light" data-act="aset" data-t="${t}" data-id="${id}" data-s="${s==='active'?b:a}" data-n="${esc(n)}"><i class="bi bi-${s==='active'?'slash-circle':'check-circle'}"></i> ${s==='active'?(t==='users'?'Ban':'Suspend'):'Activate'}</button>`;
 const del=(t,id)=>`<button class="btn btn-sm btn-light text-danger" data-act="adel" data-t="${t}" data-id="${id}"><i class="bi bi-trash"></i> Delete</button>`;
 
-acts.aset=async d=>{if(await confirmBox('Change this status?','Yes, change')){await API.save(d.t,{id:+d.id,status:d.s});toast('Status updated','success');refresh()}};
+const BAN_REASONS=['Spam / Fake Orders','Abusive Behavior','Policy Violation','Fraudulent Activity','Other'];
+acts.aset=async d=>{
+  if(d.t==='users'&&d.s==='banned'){
+    const el=document.createElement('div');el.className='modal fade';
+    el.innerHTML=`<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate><div class="modal-header"><h5 class="modal-title fw-bold text-danger"><i class="bi bi-slash-circle me-1"></i> Ban User${d.n?': '+esc(d.n):''}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p class="small text-muted mb-3">Select one or more reasons for banning this user. This reason will be recorded in their moderation status.</p><div class="mb-3">${BAN_REASONS.map((r,i)=>`<div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="reasons" value="${esc(r)}" id="br_${i}"><label class="form-check-label fw-semibold" for="br_${i}">${esc(r)}</label></div>`).join('')}</div><div class="mb-2"><label class="form-label small">Custom Details <span class="text-muted fw-normal">(optional, required if "Other" is checked)</span></label><textarea name="custom" class="form-control form-control-sm" rows="2" maxlength="200" placeholder="Add specific details or incident notes..."></textarea></div><div class="text-danger small d-none" id="banErr"></div></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger px-4">Confirm Ban</button></div></form></div>`;
+    document.body.append(el);const m=new bootstrap.Modal(el);
+    el.querySelector('form').onsubmit=async e=>{
+      e.preventDefault();
+      const checked=[...el.querySelectorAll('input[name="reasons"]:checked')].map(c=>c.value);
+      const custom=el.querySelector('textarea[name="custom"]').value.trim();
+      const err=el.querySelector('#banErr');
+      if(!checked.length&&!custom){err.textContent='Select at least one ban reason or enter custom details.';err.classList.remove('d-none');return}
+      if(checked.includes('Other')&&!custom){err.textContent='Please enter custom details when "Other" is selected.';err.classList.remove('d-none');return}
+      const list=checked.filter(r=>r!=='Other');
+      let reason=list.join(', ');
+      if(custom)reason=reason?`${reason} — ${custom}`:custom;
+      reason=reason.slice(0,255);
+      const btn=el.querySelector('button.btn-danger');btn.disabled=true;
+      try{await API.save('users',{id:+d.id,status:'banned',ban_reason:reason});m.hide();toast('User banned','success');refresh()}
+      catch(x){err.textContent=x.message;err.classList.remove('d-none');btn.disabled=false}
+    };
+    el.addEventListener('hidden.bs.modal',()=>el.remove());
+    m.show();
+    return;
+  }
+  if(await confirmBox(d.t==='users'&&d.s==='active'?'Reactivate this user account?':'Change this status?','Yes, change')){await API.save(d.t,{id:+d.id,status:d.s});toast('Status updated','success');refresh()}
+};
 acts.adel=async d=>{if(await confirmBox('Delete permanently? This cannot be undone.','Delete')){await API.remove(d.t,+d.id);toast('Deleted');refresh()}};
 
 A.login=async v=>loginPage('admin',v);
@@ -48,8 +74,8 @@ A.users=async v=>{
       ['Name',u=>`<b>${esc(u.name)}</b>`],
       ['Email',u=>esc(u.email)],
       ['Role',u=>`<span class="badge-status badge-neutral">${esc(u.role)}</span>`],
-      ['Status',u=>badge(u.status)],
-      ['',u=>`<div class="d-flex gap-1 justify-content-end">${tgl('users',u.id,u.status,'active','banned')} ${del('users',u.id)}</div>`]
+      ['Status',u=>`${badge(u.status)}${u.status==='banned'&&u.ban_reason?`<div class="small text-danger mt-1"><i class="bi bi-exclamation-circle me-1"></i>${esc(u.ban_reason)}</div>`:''}${u.status==='banned'&&u.banned_at?`<div class="text-muted" style="font-size:.72rem">Banned ${fmt(when(u.banned_at))}</div>`:''}`],
+      ['',u=>`<div class="d-flex gap-1 justify-content-end">${tgl('users',u.id,u.status,'active','banned',u.name)} ${del('users',u.id)}</div>`]
     ],us)}`;
 };
 acts.addU=async()=>{
@@ -112,34 +138,13 @@ acts.viewV=async d=>{
       </div>
     </div>
     <div class="card bg-light p-3">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h6 class="fw-bold mb-0"><i class="bi bi-image text-wmsu me-1"></i> Canteen Banner</h6>
-        ${x.banner?'<button type="button" class="btn btn-sm btn-outline-danger" id="admBDel"><i class="bi bi-trash"></i> Remove</button>':''}
-      </div>
-      <div id="admBPrev" class="mb-2">
+      <h6 class="fw-bold mb-2"><i class="bi bi-image text-wmsu me-1"></i> Canteen Banner</h6>
+      <div>
         ${x.banner?`<img src="${esc(x.banner)}" alt="Banner" style="width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:'<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No canteen banner uploaded</div>'}
-      </div>
-      <div class="input-group input-group-sm">
-        <input type="file" id="admBFile" accept="image/jpeg,image/png,image/webp" class="form-control">
-        <button type="button" class="btn btn-wmsu" id="admBUp"><i class="bi bi-upload"></i> Upload Banner</button>
       </div>
     </div>
   </div><div class="modal-footer"><button type="button" class="btn btn-wmsu px-4" data-bs-dismiss="modal">Close</button></div></div></div>`;
   document.body.append(el);const m=new bootstrap.Modal(el);
-  el.querySelector('#admBUp').onclick=async()=>{
-    const f=el.querySelector('#admBFile').files[0];
-    if(!f)return toast('Choose an image first.','danger');
-    if(f.size>2*1024*1024)return toast('Banner must be 2 MB or smaller.','danger');
-    const r=await API.uploadBanner(x.id,f);
-    el.querySelector('#admBPrev').innerHTML=`<img src="${ROOT}uploads/banners/${esc(r.banner)}" alt="Banner" style="width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
-    toast('Banner updated','success');refresh();
-  };
-  const delBtn=el.querySelector('#admBDel');
-  if(delBtn)delBtn.onclick=async()=>{
-    await API.removeBanner(x.id);
-    el.querySelector('#admBPrev').innerHTML='<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No canteen banner uploaded</div>';
-    delBtn.remove();toast('Banner removed');refresh();
-  };
   el.addEventListener('hidden.bs.modal',()=>el.remove());
   m.show();
 };
@@ -208,19 +213,17 @@ A.foods=async v=>{
   v.innerHTML=`
     <div class="mb-4">
       <h4 class="fw-bold mb-1">All Food Items</h4>
-      <p class="text-muted small mb-0">Global list of menu items from all registered stalls.</p>
+      <p class="text-muted small mb-0">Read-only inspection of menu items across all registered stalls.</p>
     </div>
     ${table([
       ['Item',f=>`${f.emoji} <b>${esc(f.name)}</b>`],
       ['Vendor',f=>vname(vs,f.vendorId)],
       ['Category',f=>esc(cs.find(c=>c.id===f.catId)?.name||'-')],
       ['Price',f=>peso(f.price)],
-      ['Status',f=>badge(f.available?'active':'suspended').replace('suspended','unavailable')],
-      ['',f=>`<div class="d-flex gap-1 justify-content-end"><a class="btn btn-sm btn-light" href="edit-food.html?id=${f.id}"><i class="bi bi-pencil"></i> Edit</a> ${del('foods',f.id)}</div>`]
+      ['Status',f=>badge(f.available?'active':'suspended').replace('suspended','unavailable')]
     ],fs)}`;
 };
 
-A['edit-food']=async v=>foodForm(v);
 A.categories=async v=>catPage(v);
 
 A.orders=async v=>{
@@ -246,19 +249,19 @@ A.orders=async v=>{
 };
 
 A.payments=async v=>{
-  const ps=await API.list('payments');
+  const [ps,vs]=await Promise.all([API.list('payments'),API.list('vendors')]);
   v.innerHTML=`
     <div class="mb-4">
-      <h4 class="fw-bold mb-1">Payments & Audits</h4>
-      <p class="text-muted small mb-0">Verify e-wallet references, confirm cash, or process refunds.</p>
+      <h4 class="fw-bold mb-1">Payments & Transaction Log</h4>
+      <p class="text-muted small mb-0">Read-only audit log of customer-vendor payments and references.</p>
     </div>
     ${table([
       ['Order',p=>`<b>#${esc(p.no)}</b>`],
+      ['Vendor',p=>vname(vs,p.vendorId)],
       ['Method',p=>PN[p.method]||esc(p.method)],
       ['Amount',p=>`<strong class="text-wmsu">${peso(p.amount)}</strong>`],
       ['Reference',p=>p.ref?`<code>${esc(p.ref)}</code>`:'<span class="text-muted">-</span>'],
-      ['Status',p=>badge(p.status)],
-      ['',p=>`<div class="d-flex gap-1 justify-content-end">${payBtns(p.orderId,p.method,p.status,p.orderStatus)}</div>`]
+      ['Status',p=>badge(p.status)]
     ],ps,'No payments yet.')}`;
 };
 
@@ -293,34 +296,22 @@ A.settings=async v=>{
         <div class="col"><label class="form-label">Opening Time</label><input type="time" name="open" class="form-control" value="${esc(s.open)}" required></div>
         <div class="col"><label class="form-label">Closing Time</label><input type="time" name="close" class="form-control" value="${esc(s.close)}" required></div>
       </div>
-      <label class="form-label mb-2">Accepted Payment Methods & Account Details</label>
+      <label class="form-label mb-2">Accepted Payment Methods</label>
       <div class="card bg-light p-3 mb-4">
-        <div class="form-check form-switch mb-3">
+        <div class="form-check form-switch mb-2">
           <input class="form-check-input" type="checkbox" id="pay_cash" name="cash" ${s.cash?'checked':''}>
           <label class="form-check-label fw-semibold" for="pay_cash">Cash at Counter</label>
         </div>
-        <div class="border-top pt-3 mb-3">
-          <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="pay_gcash" name="gcash" ${s.gcash?'checked':''}>
-            <label class="form-check-label fw-semibold" for="pay_gcash">GCash</label>
-          </div>
-          <div class="row g-2 ps-4">
-            <div class="col-sm-6"><label class="form-label small mb-1">GCash Mobile Number</label><input name="gcashNumber" class="form-control form-control-sm" placeholder="e.g. 0917 123 4567" value="${esc(s.gcashNumber)}"></div>
-            <div class="col-sm-6"><label class="form-label small mb-1">GCash Account Name</label><input name="gcashName" class="form-control form-control-sm" placeholder="e.g. WMSU Campus Canteen" value="${esc(s.gcashName)}"></div>
-          </div>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="pay_gcash" name="gcash" ${s.gcash?'checked':''}>
+          <label class="form-check-label fw-semibold" for="pay_gcash">GCash</label>
         </div>
-        <div class="border-top pt-3">
-          <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="pay_maya" name="maya" ${s.maya?'checked':''}>
-            <label class="form-check-label fw-semibold" for="pay_maya">Maya</label>
-          </div>
-          <div class="row g-2 ps-4">
-            <div class="col-sm-6"><label class="form-label small mb-1">Maya Mobile Number</label><input name="mayaNumber" class="form-control form-control-sm" placeholder="e.g. 0918 123 4567" value="${esc(s.mayaNumber)}"></div>
-            <div class="col-sm-6"><label class="form-label small mb-1">Maya Account Name</label><input name="mayaName" class="form-control form-control-sm" placeholder="e.g. WMSU Campus Canteen" value="${esc(s.mayaName)}"></div>
-          </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="pay_maya" name="maya" ${s.maya?'checked':''}>
+          <label class="form-check-label fw-semibold" for="pay_maya">Maya</label>
         </div>
       </div>
       <div><button class="btn btn-wmsu px-4">Save Settings</button></div>
     </form>`;
-  onForm('#sf',async d=>{await API.save('settings',{id:1,canteen:d.canteen,open:d.open,close:d.close,gcashNumber:d.gcashNumber,gcashName:d.gcashName,mayaNumber:d.mayaNumber,mayaName:d.mayaName,...Object.fromEntries(Object.keys(PN).map(k=>[k,!!d[k]]))});toast('Settings saved','success')});
+  onForm('#sf',async d=>{await API.save('settings',{id:1,canteen:d.canteen,open:d.open,close:d.close,...Object.fromEntries(Object.keys(PN).map(k=>[k,!!d[k]]))});toast('Settings saved','success')});
 };

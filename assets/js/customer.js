@@ -62,6 +62,7 @@ C.menu=async v=>{
           <div class="p-3 d-flex flex-column flex-grow-1">
             <h6 class="fw-bold mb-1 text-truncate" title="${esc(f.name)}">${esc(f.name)}</h6>
             <p class="text-muted small mb-2 text-truncate">${esc(f.desc||'')}</p>
+            ${f.available&&f.stockQty!=null&&f.stockQty<=10?`<div class="mb-2"><span class="badge-status badge-pending">${f.stockQty} left</span></div>`:''}
             <div class="d-flex justify-content-between align-items-center mt-auto pt-2 border-top">
               <strong class="text-wmsu fs-5">${peso(f.price)}</strong>
               ${f.available?`<button class="btn btn-wmsu btn-sm px-3" aria-label="Add ${esc(f.name)}" data-act="quick" data-id="${f.id}"><i class="bi bi-plus-lg me-1"></i> Add</button>`:'<span class="badge-status badge-neutral">Sold out</span>'}
@@ -87,7 +88,8 @@ C['food-details']=async v=>{
       </div>
       <div class="col-lg-6 d-flex flex-column justify-content-center">
         <h1 class="fw-bold mb-2">${esc(f.name)}</h1>
-        <h3 class="text-wmsu fw-bold mb-3">${peso(f.price)}</h3>
+        <h3 class="text-wmsu fw-bold mb-2">${peso(f.price)}</h3>
+        ${f.stockQty!=null?`<div class="mb-3"><span class="badge-status badge-${f.stockQty>5?'neutral':f.stockQty>0?'pending':'danger'}">${f.stockQty>0?f.stockQty+' serving(s) remaining':'Sold out'}</span></div>`:''}
         <p class="lead text-muted mb-4">${esc(f.desc)}</p>
         <div class="d-flex align-items-center gap-3 mb-4">
           <span class="fw-semibold">Quantity:</span>
@@ -100,7 +102,8 @@ C['food-details']=async v=>{
         </div>
       </div>
     </div>`;
-  acts.dq=d=>{n=Math.max(1,Math.min(20,n+ +d.d));$('#n').textContent=n};
+  const maxQ=f.stockQty!=null?Math.max(1,Math.min(20,f.stockQty)):20;
+  acts.dq=d=>{n=Math.max(1,Math.min(maxQ,n+ +d.d));$('#n').textContent=n};
   $('#add').onclick=async()=>{if(await cart.add(f,n))location='cart.html'};
 };
 
@@ -299,6 +302,7 @@ C.confirmation=async v=>{
                 <div class="card p-3 bg-white border mt-1">
                   ${o.payStatus==='Failed'?'<div class="alert alert-danger py-2 small mb-2">Previous reference could not be verified. Please submit a valid reference number.</div>':''}
                   <div class="small mb-2">Send exact amount <b class="text-wmsu">${peso(o.total)}</b> via <b>${PAYS[o.pay]?.[1]||'e-wallet'}</b> to:</div>
+                  ${o.pay==='gcash'&&o.gcashQr?`<div class="text-center p-3 mb-2 bg-light rounded border"><img src="${esc(o.gcashQr)}" alt="GCash QR Code" style="max-width:200px;max-height:200px;border-radius:8px"><div class="small text-muted mt-1">Scan with your GCash app</div></div>`:''}
                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 p-2 bg-light rounded border">
                     <div>
                       <div class="fw-bold text-dark fs-6">${ewNum?esc(ewNum):'<span class="text-muted small">Ask stall cashier</span>'}</div>
@@ -326,7 +330,20 @@ C.confirmation=async v=>{
         <a class="btn btn-wmsu btn-lg" href="tracking.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-geo-alt me-1"></i> Track Order Status</a>
         <a class="btn btn-light" href="receipt.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-receipt me-1"></i> View Receipt</a>
       </div>
+      <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2 small text-muted" id="kioskBar">
+        <span id="kioskTimer"></span>
+        <button type="button" class="btn btn-sm btn-light" id="kioskReset"><i class="bi bi-arrow-repeat me-1"></i> New Customer (Clear Session)</button>
+      </div>
     </div>`;
+  const clearKiosk=()=>{localStorage.removeItem('cart2');localStorage.removeItem('draft');localStorage.removeItem('lastOrder');localStorage.removeItem('myOrders');location='vendors.html'};
+  $('#kioskReset').onclick=clearKiosk;
+  const anyNeedRef=isEwallet&&orders.some(o=>['Unpaid','Failed'].includes(o.payStatus)&&o.orderStatus!=='Cancelled');
+  clearInterval(window._kioskT);
+  if(!anyNeedRef){
+    let sec=60;
+    const tick=()=>{const el=$('#kioskTimer');if(!el)return clearInterval(window._kioskT);el.innerHTML=`Kiosk privacy reset in <b>${sec}s</b> · <a href="#" id="kioskStay">Keep open</a>`;$('#kioskStay').onclick=e=>{e.preventDefault();clearInterval(window._kioskT);el.textContent='Auto-reset paused.'};if(sec--<=0){clearInterval(window._kioskT);clearKiosk()}};
+    tick();window._kioskT=setInterval(tick,1000);
+  }
   document.querySelectorAll('.rf-stall').forEach(f=>{
     f.addEventListener('submit',async e=>{
       e.preventDefault();
@@ -419,6 +436,7 @@ C.tracking=async v=>{
             <div class="stepper my-3">
               ${STEPS.map((s,i)=>`<div class="step ${i<=STEPS.findIndex(x=>x[0]===o.status)?'done':''}"><i class="bi bi-${s[1]}"></i>${s[2]}</div>`).join('')}
             </div>
+            ${o.status==='rejected'?`<div class="alert alert-danger small py-2 mb-2"><i class="bi bi-x-circle-fill me-1"></i> <b>Order declined:</b> ${esc(o.cancelReason||'Declined by stall.')}${o.payStatus==='Paid'||o.payStatus==='Pending Verification'?` Please approach <b>${esc(o.vendorName||'this stall')}</b> at the counter for your refund/reversal.`:''}</div>`:o.estMinutes!=null&&(o.status==='pending'||o.status==='preparing')?`<div class="small text-wmsu fw-semibold mb-2"><i class="bi bi-clock me-1"></i> Est. prep time: ~${o.estMinutes} mins${o.queueAhead>0?` (${o.queueAhead} order${o.queueAhead>1?'s':''} ahead)`:' (next in queue)'}</div>`:''}
             <div class="small text-muted pt-2 border-top"><strong>Items:</strong> ${o.items.map(i=>`${i.qty}× ${esc(i.name)}`).join(', ')}</div>
           </div>`).join('')}`;
     }catch(e){clearInterval(poll);$('#tr').innerHTML=empty('search',esc(e.message))};

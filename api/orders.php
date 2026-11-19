@@ -10,9 +10,16 @@ function with_items(array $rows, bool $public = false): array { if (!$rows) retu
 
 if ($m === 'GET') {
   if (isset($_GET['order_no'])) {
-    $target = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
+    $target = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
     if (!$target) fail('Order not found. Check the order number and tracking code.', 404);
-    $all = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
+    $all = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
+    foreach ($all as &$r) {
+      if (in_array($r['order_status'], ['Pending Payment', 'Confirmed', 'Preparing'], true)) {
+        $ahead = (int)q("SELECT COUNT(*) FROM orders WHERE vendor_id=? AND order_status IN ('Confirmed','Preparing') AND id<?", [$r['vendor_id'], $r['id']])->fetchColumn();
+        $r['queue_ahead'] = $ahead;
+        $r['est_minutes'] = 5 + ($ahead * 4);
+      }
+    }
     respond(with_items($all, true));
   }
   $u = need_role('customer', 'vendor', 'admin'); $w = ['1=1']; $p = [];
@@ -62,6 +69,13 @@ if ($m === 'POST') {
       $no = 'WM' . date('ymd') . '-' . str_pad((string)$oid, 5, '0', STR_PAD_LEFT);
       q('UPDATE orders SET order_no=? WHERE id=?', [$no, $oid]);
       foreach ($grp['items'] as $it) {
+        $frow = q('SELECT stock_qty,is_available FROM foods WHERE id=? FOR UPDATE', [$it['id']])->fetch();
+        if (!$frow || !$frow['is_available']) { $pdo->rollBack(); fail("\"{$it['name']}\" just sold out.", 409); }
+        if ($frow['stock_qty'] !== null) {
+          if ((int)$frow['stock_qty'] < $it['qty']) { $pdo->rollBack(); fail("Only {$frow['stock_qty']} serving(s) left for \"{$it['name']}\".", 409); }
+          $rem = (int)$frow['stock_qty'] - $it['qty'];
+          q('UPDATE foods SET stock_qty=?,is_available=IF(?=0,0,is_available) WHERE id=?', [$rem, $rem, $it['id']]);
+        }
         q('INSERT INTO order_items(order_id,food_id,name,unit_price,qty,line_total) VALUES(?,?,?,?,?,?)',
           [$oid, $it['id'], $it['name'], $it['price'], $it['qty'], $it['line'] / 100]);
       }
@@ -75,7 +89,7 @@ if ($m === 'POST') {
   respond(['id' => $created[0]['id'], 'order_no' => $created[0]['order_no'], 'orders' => $created, 'track_code' => $code, 'total' => $grand_total, 'order_status' => 'Pending Payment', 'payment_status' => 'Unpaid'], 201);
 }
 if ($m === 'PATCH') {
-  $u = need_role('customer', 'vendor', 'admin'); $b = body(); $to = one_of($b, 'order_status', array_keys(FLOW)); $pdo = db(); $pdo->beginTransaction();
+  $u = need_role('customer', 'vendor'); $b = body(); $to = one_of($b, 'order_status', array_keys(FLOW)); $pdo = db(); $pdo->beginTransaction();
   try { $o = q('SELECT o.*,v.user_id vendor_user FROM orders o JOIN vendors v ON v.id=o.vendor_id WHERE o.id=? FOR UPDATE', [id()])->fetch();
     if (!$o || ($u['role'] === 'vendor' && (int)$o['vendor_id'] !== my_vendor_id($u)) || ($u['role'] === 'customer' && (int)$o['user_id'] !== $u['id'])) { $pdo->rollBack(); fail('Order not found.', 404); }
     if (!in_array($to, FLOW[$o['order_status']], true)) { $pdo->rollBack(); fail("An order that is \"{$o['order_status']}\" cannot move to \"$to\".", 409); }

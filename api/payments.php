@@ -15,19 +15,21 @@ try {
     if (!$o) { $pdo->rollBack(); fail('Order not found.', 404); }
     if ($o['payment_method'] === 'cash' || !in_array($o['payment_status'], ['Unpaid', 'Failed'], true) || $o['order_status'] === 'Cancelled') { $pdo->rollBack(); fail('A payment reference cannot be submitted for this order.', 409); }
     $ref = str($b, 'reference', 4, 60); if (!preg_match('/^[A-Za-z0-9\-]+$/', $ref)) { $pdo->rollBack(); fail('Reference may only contain letters, numbers and dashes.', 422, ['reference' => 'Invalid format.']); }
+    if (q("SELECT 1 FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.reference=? AND o.id!=? AND p.status IN ('Pending Verification','Paid') AND o.order_status!='Cancelled'", [$ref, $o['id']])->fetch()) {
+      $pdo->rollBack(); fail('This reference number has already been used for another order.', 409, ['reference' => 'Duplicate reference number.']);
+    }
     q('UPDATE payments SET reference=? WHERE order_id=?', [$ref, $o['id']]);
     set_pay($o, 'Pending Verification', null);
     $vuser = q('SELECT user_id FROM vendors WHERE id=?', [$o['vendor_id']])->fetchColumn();
     notify($vuser ? (int)$vuser : null, (int)$o['id'], "Payment ref $ref submitted for {$o['order_no']}");
     $pdo->commit(); respond(['payment_status' => 'Pending Verification']);
   }
-  $u = need_role('vendor', 'admin'); $o = q('SELECT * FROM orders WHERE id=? FOR UPDATE', [id('order_id')])->fetch();
-  if (!$o || ($u['role'] === 'vendor' && (int)$o['vendor_id'] !== my_vendor_id($u))) { $pdo->rollBack(); fail('Order not found.', 404); }
+  $u = need_role('vendor'); $o = q('SELECT * FROM orders WHERE id=? FOR UPDATE', [id('order_id')])->fetch();
+  if (!$o || (int)$o['vendor_id'] !== my_vendor_id($u)) { $pdo->rollBack(); fail('Order not found.', 404); }
   $ps = $o['payment_status']; $cash = $o['payment_method'] === 'cash'; $new = null;
   if ($act === 'confirm_cash' && $cash && $ps === 'Unpaid' && $o['order_status'] !== 'Cancelled') $new = 'Paid';
   elseif ($act === 'verify' && !$cash && $ps === 'Pending Verification') $new = 'Paid';   // manual check against the provider's dashboard; prefer the webhook
   elseif ($act === 'fail' && !$cash && in_array($ps, ['Unpaid', 'Pending Verification'], true)) $new = 'Failed';
-  elseif ($act === 'refund' && $u['role'] === 'admin' && $ps === 'Paid') { $new = 'Refunded'; q("UPDATE orders SET order_status='Cancelled',cancel_reason='Refunded' WHERE id=?", [$o['id']]); }
   if (!$new) { $pdo->rollBack(); fail("Action \"$act\" is not allowed for a $ps " . $o['payment_method'] . ' payment.', 409); }
   set_pay($o, $new, $u['id']); notify($o['user_id'] ? (int)$o['user_id'] : null, (int)$o['id'], "Payment for {$o['order_no']}: $new");
   audit("payment.$act", "{$o['order_no']} -> $new"); $pdo->commit(); respond(['payment_status' => $new]);
