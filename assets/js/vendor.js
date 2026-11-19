@@ -1,12 +1,47 @@
 /* Vendor pages */
 const V=PAGES.vendor, vid=()=>SES()?.vendorId, PAYN={cash:'Cash',gcash:'GCash',maya:'Maya',card:'Card'};
 const myOrd=async()=>(await API.list('orders')).filter(o=>o.vendorId===vid()).sort((a,b)=>new Date(b.time)-new Date(a.time));
-const FLOW={
-  pending:[['preparing','Accept','success','check-lg'],['rejected','Reject','outline-danger','x-lg']],
-  preparing:[['ready','Mark Ready','wmsu','bag-check']],
-  ready:[['completed','Complete','success','check2-circle']]
+const payActHtml=o=>{
+  if(o.orderStatus==='Cancelled'||o.pay==='cash')return '';
+  if(o.payStatus==='Pending Verification'){
+    return `<div class="d-flex flex-wrap align-items-center gap-1"><span class="text-uppercase fw-bold text-muted me-1" style="font-size:.66rem;letter-spacing:.04em">Payment:</span><button class="btn btn-sm btn-success" data-act="payA" data-id="${o.id}" data-a="verify" data-ref="${esc(o.ref)}" data-amt="${peso(o.total)}"><i class="bi bi-shield-check"></i> Confirm Payment</button><button class="btn btn-sm btn-outline-danger" data-act="payA" data-id="${o.id}" data-a="fail"><i class="bi bi-x-circle"></i> Invalid Payment</button></div>`;
+  }
+  if(o.payStatus==='Unpaid')return `<div class="small text-muted"><i class="bi bi-hourglass-split me-1"></i>Awaiting customer ${PAYN[o.pay]||o.pay} ref</div>`;
+  if(o.payStatus==='Failed')return `<div class="small text-danger"><i class="bi bi-exclamation-circle me-1"></i>Invalid payment — awaiting new ref</div>`;
+  return '';
 };
-const obtn=o=>(FLOW[o.status]||[]).map(f=>`<button class="btn btn-sm btn-${f[2]}" data-act="setS" data-id="${o.id}" data-s="${f[0]}"><i class="bi bi-${f[3]}"></i> ${f[1]}</button>`).join(' ');
+
+const orderActHtml=o=>{
+  if(o.status==='completed'||o.status==='rejected')return '';
+  const btns=[];
+  const isCash=o.pay==='cash';
+  if(o.status==='pending'){
+    if(isCash){
+      btns.push(`<button class="btn btn-sm btn-wmsu" data-act="setS" data-id="${o.id}" data-s="preparing"><i class="bi bi-check-lg"></i> Confirm Order (Cash)</button>`);
+    }else if(o.payStatus==='Paid'){
+      btns.push(`<button class="btn btn-sm btn-wmsu" data-act="setS" data-id="${o.id}" data-s="preparing"><i class="bi bi-fire"></i> Accept & Prepare Order</button>`);
+    }
+    btns.push(`<button class="btn btn-sm btn-outline-danger" data-act="setS" data-id="${o.id}" data-s="rejected"><i class="bi bi-x-lg"></i> Reject Order</button>`);
+  }else if(o.status==='preparing'){
+    btns.push(`<button class="btn btn-sm btn-wmsu" data-act="setS" data-id="${o.id}" data-s="ready"><i class="bi bi-bag-check"></i> Mark Ready for Pickup</button>`);
+  }else if(o.status==='ready'){
+    if(isCash&&o.payStatus==='Unpaid'){
+      btns.push(`<button class="btn btn-sm btn-success" data-act="cashComplete" data-id="${o.id}" data-amt="${peso(o.total)}"><i class="bi bi-cash-coin"></i> Confirm Cash Received & Complete</button>`);
+    }else{
+      btns.push(`<button class="btn btn-sm btn-success" data-act="setS" data-id="${o.id}" data-s="completed"><i class="bi bi-check2-circle"></i> Complete Order</button>`);
+    }
+  }
+  return btns.length?`<div class="d-flex flex-wrap align-items-center gap-1"><span class="text-uppercase fw-bold text-muted me-1" style="font-size:.66rem;letter-spacing:.04em">Order:</span>${btns.join('')}</div>`:'';
+};
+
+acts.cashComplete=async d=>{
+  if(!await confirmBox(`Confirm that you received <b>${esc(d.amt||'the cash payment')}</b> and handed over the order?`,'Confirm & Complete'))return;
+  await API.pay(+d.id,'confirm_cash');
+  await API.save('orders',{id:+d.id,status:'completed'});
+  toast('Cash received & order completed','success');
+  refresh();
+};
+
 acts.setS=async d=>{
   if(d.s==='rejected'){
     const r=await modal('Reject Order',`<p class="small text-muted mb-2">Tell the customer why this order cannot be fulfilled:</p><label class="form-label small">Reason</label><select name="preset" class="form-select form-select-sm mb-2"><option value="Out of stock">Out of stock</option><option value="Closing early">Closing early</option><option value="Unable to fulfill order">Unable to fulfill order</option><option value="">Other (type below)</option></select><input name="custom" class="form-control form-control-sm" maxlength="180" placeholder="Optional details or custom reason...">`,'Reject Order','btn-danger');
@@ -17,7 +52,10 @@ acts.setS=async d=>{
   }
   await API.save('orders',{id:+d.id,status:d.s});toast('Order updated','success');refresh();
 };
-const actCell=o=>[obtn(o),payBtns(o.id,o.pay,o.payStatus,o.orderStatus,o.ref,o.total)].filter(Boolean).join(' ')||'<span class="text-muted small">-</span>';
+const actCell=o=>{
+  const parts=[payActHtml(o),orderActHtml(o)].filter(Boolean);
+  return parts.length?`<div class="d-flex flex-column gap-1">${parts.join('')}</div>`:'<span class="text-muted small">-</span>';
+};
 const soundOn=()=>store.get('vendor_sound',true);
 const playChime=()=>{if(!soundOn())return;try{const ctx=new(window.AudioContext||window.webkitAudioContext)();[[1046.5,0],[1318.5,0.14]].forEach(([freq,delay])=>{const osc=ctx.createOscillator(),g=ctx.createGain();osc.type='sine';osc.frequency.value=freq;g.gain.setValueAtTime(0.001,ctx.currentTime+delay);g.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+delay+0.02);g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+delay+0.35);osc.connect(g);g.connect(ctx.destination);osc.start(ctx.currentTime+delay);osc.stop(ctx.currentTime+delay+0.36)})}catch{}};
 const checkAlert=os=>{const cur=os.filter(o=>o.status==='pending'||o.payStatus==='Pending Verification').map(o=>o.id);if(window._knownAtt){const fresh=cur.some(id=>!window._knownAtt.includes(id));if(fresh){playChime();toast('New order or payment verification received!','success')}}window._knownAtt=cur};
@@ -30,8 +68,8 @@ const ocols=[
   ['Items',o=>o.items.map(i=>`${i.qty}× ${esc(i.name)}`).join(', ')],
   ['Type',o=>esc(o.type)],
   ['Total',o=>`<strong class="text-wmsu">${peso(o.total)}</strong>`],
-  ['Payment',o=>`<span>${PAYN[o.pay]||o.pay}</span> ${badge(o.payStatus)}${o.ref?`<br><small class="text-muted">Ref: <code>${esc(o.ref)}</code></small>`:''}`],
-  ['Status',o=>badge(o.status)]
+  ['Payment Status',o=>`<div class="d-flex flex-column gap-1"><div><span class="fw-semibold">${PAYN[o.pay]||o.pay}</span> ${badge(o.payStatus)}</div>${o.ref?`<small class="text-muted">Ref: <code>${esc(o.ref)}</code></small>`:''}</div>`],
+  ['Order Status',o=>`<div class="d-flex flex-column gap-1"><div>${badge(o.status)}</div><small class="text-muted" style="font-size:.73rem">${esc(o.orderStatus)}</small></div>`]
 ];
 
 V.login=async v=>loginPage('vendor',v);
@@ -107,7 +145,7 @@ V['order-details']=async v=>{
       ${o.items.map(i=>`<div class="d-flex justify-content-between py-1"><span>${i.qty}× ${esc(i.name)}</span><b>${peso(i.qty*i.price)}</b></div>`).join('')}
       <hr class="my-3">
       <div class="d-flex justify-content-between fs-4 mb-4"><b>Total</b><b class="text-wmsu">${peso(o.total)}</b></div>
-      <div class="d-flex flex-wrap gap-2">${[obtn(o),payBtns(o.id,o.pay,o.payStatus,o.orderStatus,o.ref,o.total)].filter(Boolean).join(' ')||'<span class="text-muted">No further actions.</span>'}</div>
+      <div class="pt-2">${actCell(o)}</div>
     </div>`;
 };
 

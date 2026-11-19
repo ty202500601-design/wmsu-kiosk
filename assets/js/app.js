@@ -88,7 +88,7 @@ function updateCart(){const n=cart.count(),b=$('#cartCount'),bar=$('#cartbar');i
  if(bar)bar.innerHTML=n&&B.page!=='cart'?`<a class="btn btn-wmsu btn-lg" href="cart.html"><span><i class="bi bi-cart3"></i> ${n} item(s)</span><span>View cart · ${peso(cart.total())}</span></a>`:''}
 
 /* ---- UI helpers ---- */
-const spinner='<div class="state"><div class="spinner-border text-danger"></div><p class="mt-3">Loading…</p></div>';
+const spinner='<div class="skel-wrap" aria-busy="true" aria-label="Loading"><div class="skel skel-title"></div><div class="skel skel-line" style="width:60%"></div><div class="row g-3 mt-2"><div class="col-md-4"><div class="skel skel-card"></div></div><div class="col-md-4"><div class="skel skel-card"></div></div><div class="col-md-4"><div class="skel skel-card"></div></div></div><div class="skel skel-line mt-4"></div><div class="skel skel-line" style="width:85%"></div><div class="skel skel-line" style="width:70%"></div></div>';
 const empty=(i,m,a='')=>`<div class="state"><i class="bi bi-${i}"></i><p class="mt-2">${m}</p>${a}</div>`;
 
 const SB={
@@ -108,7 +108,12 @@ const SB={
   Refunded:'neutral',
   'Open now':'success',
   Closed:'neutral',
-  unavailable:'danger'
+  unavailable:'danger',
+  'Pending Payment':'pending',
+  Confirmed:'preparing',
+  'Ready for Pickup':'ready',
+  Completed:'success',
+  Cancelled:'danger'
 };
 const badge=s=>{
   const cls=SB[s]||'neutral';
@@ -156,7 +161,7 @@ function shell(){const {role,page}=B,title=document.title.split(' |')[0];
  $('#shell').innerHTML=`<aside class="side no-print"><div class="side-header">${brand(role==='admin'?'Admin Portal':'Vendor Portal')}</div><hr class="side-divider d-none d-lg-block"><nav class="side-nav">${NAV[role].map(n=>`<a class="${n[0]===page||(page.includes('food')&&n[0]==='menu')?'active':''}" href="${n[0]}.html"><i class="bi bi-${n[1]}"></i> <span>${n[2]}</span></a>`).join('')}</nav></aside><div class="content"><div class="top2 no-print"><h5 class="mb-0 fw-bold">${title}</h5><div class="d-flex align-items-center gap-3"><span class="text-muted small d-none d-sm-inline"><i class="bi bi-person-circle text-wmsu me-1"></i> ${esc(s.name)}</span><button class="btn btn-outline-wmsu btn-sm" data-act="logout"><i class="bi bi-box-arrow-right me-1"></i> Logout</button></div></div><main id="view" class="p-4"></main></div>`}
 
 async function boot(again){if(!again){shell();if(!$('#view'))return;
-  if(STAFF&&B.page!=='login'){let u=null;try{u=await API.me()}catch{}if(!u||u.role!==B.role){sessionStorage.removeItem('wmsu_session');location='login.html';return}}}const v=$('#view');if(!again)v.innerHTML=spinner;
+  if(STAFF&&B.page!=='login'){let u=null;try{u=await API.me()}catch{}if(!u||u.role!==B.role){sessionStorage.removeItem('wmsu_session');location='login.html';return}}}const v=$('#view');v.classList.toggle('no-anim',!!again);if(!again)v.innerHTML=spinner;
  try{await PAGES[B.role][B.page](v)}catch(e){v.innerHTML=empty('exclamation-triangle',`Couldn't load this page (${esc(e.message)}). Check your connection and try again.`,'<button class="btn btn-wmsu mt-2" onclick="refresh()">Retry</button>')}}
 document.addEventListener('DOMContentLoaded',()=>boot());
 

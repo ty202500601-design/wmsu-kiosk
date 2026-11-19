@@ -4,27 +4,49 @@ const myOrders=()=>store.get('myOrders',[]).filter(x=>x&&x.no), curV=()=>+(qs.ge
 const PAYS={cash:['cash-coin','Cash at Counter'],gcash:['phone','GCash'],maya:['wallet2','Maya'],card:['credit-card','Debit/Credit Card']};
 const head=(t,s='')=>`<div class="page-header mb-4"><h2 class="page-title">${t}</h2>${s?`<p class="text-muted mb-0">${s}</p>`:''}</div>`;
 
+/* Shared search helpers */
+const hl=(t,q)=>{t=String(t??'');if(!q)return esc(t);const i=t.toLowerCase().indexOf(q);return i<0?esc(t):esc(t.slice(0,i))+'<mark class="hl">'+esc(t.slice(i,i+q.length))+'</mark>'+esc(t.slice(i+q.length))};
+const searchBox=(id,ph)=>`<div class="search-box"><i class="bi bi-search search-ico"></i><input id="${id}" type="search" class="search-input" placeholder="${ph}" autocomplete="off" aria-label="${ph}" spellcheck="false"><button type="button" class="search-clear" id="${id}Clear" aria-label="Clear search" hidden><i class="bi bi-x-lg"></i></button><kbd class="search-kbd d-none d-md-inline">/</kbd></div>`;
+const bindSearch=(id,onChange)=>{const inp=$('#'+id),clr=$('#'+id+'Clear');let t;
+  const apply=()=>{clr.hidden=!inp.value;onChange(inp.value.toLowerCase().trim())};
+  inp.addEventListener('input',()=>{clearTimeout(t);clr.hidden=!inp.value;t=setTimeout(apply,120)});
+  clr.onclick=()=>{inp.value='';apply();inp.focus()};
+  inp.addEventListener('keydown',e=>{if(e.key==='Escape'&&inp.value){inp.value='';apply()}});
+  document.onkeydown=e=>{if(e.key==='/'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&!document.querySelector('.modal.show')){e.preventDefault();inp.focus()}};
+  return ()=>{inp.value='';apply()}};
+
 C.vendors=async v=>{
   const vs=(await API.list('vendors')).filter(x=>x.status==='active');
-  v.innerHTML=head('Choose a vendor','Select a campus food stall to browse their menu and start ordering.')+(vs.length?`<div class="row g-4">${vs.map(x=>`
-    <div class="col-md-6 col-lg-4">
-      <div class="card vcard h-100">
-        <div class="vcard-banner">
-          ${x.banner?`<img src="${esc(x.banner)}" alt="${esc(x.name)} banner">`:''}
-        </div>
-        <div class="vcard-avatar">${x.emoji||'🍽️'}</div>
-        <div class="p-4 pt-2 d-flex flex-column flex-grow-1 text-center">
-          <h5 class="fw-bold mb-1 text-truncate" title="${esc(x.name)}">${esc(x.name)}</h5>
-          <p class="text-muted small vcard-desc mb-3">${esc(x.desc||'Campus food stall')}</p>
-          <div class="mb-3">
-            ${badge(x.open?'Open now':'Closed')}
+  let q='',onlyOpen=false;
+  v.innerHTML=head('Choose a vendor','Select a campus food stall to browse their menu and start ordering.')+(vs.length?`
+    <div class="search-bar mb-4">
+      ${searchBox('vq','Search stalls by name or description…')}
+      <button type="button" class="pill" id="openOnly" aria-pressed="false"><i class="bi bi-door-open"></i> Open now</button>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mb-3"><span class="small text-muted" id="vcount" aria-live="polite"></span></div>
+    <div class="row g-4 no-anim-children" id="vgrid"></div>`:empty('shop','No vendors are open right now.'));
+  if(!vs.length)return;
+  const draw=()=>{
+    const l=vs.filter(x=>(!onlyOpen||x.open)&&(!q||x.name.toLowerCase().includes(q)||(x.desc||'').toLowerCase().includes(q)));
+    $('#vcount').textContent=q||onlyOpen?`${l.length} of ${vs.length} stall${vs.length>1?'s':''}`:`${vs.length} stall${vs.length>1?'s':''} available`;
+    $('#vgrid').innerHTML=l.length?l.map(x=>`
+      <div class="col-md-6 col-lg-4">
+        <div class="card vcard h-100">
+          <div class="vcard-banner">${x.banner?`<img src="${esc(x.banner)}" alt="${esc(x.name)} banner" loading="lazy">`:''}</div>
+          <div class="vcard-avatar">${x.emoji||'🍽️'}</div>
+          <div class="p-4 pt-2 d-flex flex-column flex-grow-1 text-center">
+            <h5 class="fw-bold mb-1 text-truncate" title="${esc(x.name)}">${hl(x.name,q)}</h5>
+            <p class="text-muted small vcard-desc mb-3">${hl(x.desc||'Campus food stall',q)}</p>
+            <div class="mb-3">${badge(x.open?'Open now':'Closed')}</div>
+            <button class="btn btn-wmsu w-100 mt-auto" data-act="pickV" data-id="${x.id}" ${x.open?'':'disabled'}><i class="bi bi-menu-app me-1"></i> View Menu</button>
           </div>
-          <button class="btn btn-wmsu w-100 mt-auto" data-act="pickV" data-id="${x.id}" ${x.open?'':'disabled'}>
-            <i class="bi bi-menu-app me-1"></i> View Menu
-          </button>
         </div>
-      </div>
-    </div>`).join('')}</div>`:empty('shop','No vendors are open right now.'));
+      </div>`).join(''):`<div class="col-12">${empty('search',q?`No stalls match “${esc(q)}”.`:'No stalls are open right now.',`<button class="btn btn-light mt-2" data-act="vClear"><i class="bi bi-x-circle me-1"></i> Clear filters</button>`)}</div>`;
+  };
+  const reset=bindSearch('vq',s=>{q=s;draw()});
+  $('#openOnly').onclick=e=>{onlyOpen=!onlyOpen;e.currentTarget.classList.toggle('active',onlyOpen);e.currentTarget.setAttribute('aria-pressed',onlyOpen);draw()};
+  acts.vClear=()=>{onlyOpen=false;$('#openOnly').classList.remove('active');reset()};
+  draw();
 };
 acts.pickV=d=>{store.set('vendorId',+d.id);location='menu.html?v='+d.id};
 acts.quick=d=>cart.add(FOODS[d.id]);
@@ -32,7 +54,7 @@ acts.quick=d=>cart.add(FOODS[d.id]);
 C.menu=async v=>{
   const vid=curV();if(!vid)return location='vendors.html';store.set('vendorId',vid);
   const [vs,cs,fs]=await Promise.all([API.list('vendors'),API.list('categories'),API.list('foods')]),ven=vs.find(x=>x.id===vid),all=fs.filter(f=>f.vendorId===vid);all.forEach(f=>FOODS[f.id]=f);
-  const mine=cs.filter(c=>all.some(f=>f.catId===c.id));let cat=0,q='';
+  const mine=cs.filter(c=>all.some(f=>f.catId===c.id));let cat=0,q='',avail=false;
   v.innerHTML=`
     <div class="mb-3">
       <a href="vendors.html" class="text-wmsu text-decoration-none small fw-semibold d-inline-flex align-items-center gap-1 mb-2">
@@ -46,22 +68,25 @@ C.menu=async v=>{
         </div>
       </div>
     </div>
-    <div class="input-group input-group-lg mb-3">
-      <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
-      <input id="q" class="form-control ps-0" placeholder="Search menu items…">
+    <div class="search-bar mb-3">
+      ${searchBox('q','Search dishes, ingredients or categories…')}
+      <button type="button" class="pill" id="availOnly" aria-pressed="false"><i class="bi bi-check2-circle"></i> In stock only</button>
     </div>
-    <div class="pills mb-4" id="pills"></div>
-    <div class="row g-4" id="grid"></div>`;
+    <div class="pills mb-3" id="pills"></div>
+    <div class="small text-muted mb-3" id="mcount" aria-live="polite"></div>
+    <div class="row g-4 no-anim-children" id="grid"></div>`;
+  const catName=id=>cs.find(c=>c.id===id)?.name||'';
   const draw=()=>{
     $('#pills').innerHTML=[{id:0,name:'All',icon:'🍽️'},...mine].map(c=>`<button class="pill ${c.id===cat?'active':''}" data-act="cat" data-id="${c.id}">${c.icon} ${esc(c.name)}</button>`).join('');
-    const l=all.filter(f=>(!cat||f.catId===cat)&&f.name.toLowerCase().includes(q));
+    const l=all.filter(f=>(!cat||f.catId===cat)&&(!avail||f.available)&&(!q||f.name.toLowerCase().includes(q)||(f.desc||'').toLowerCase().includes(q)||catName(f.catId).toLowerCase().includes(q)));
+    $('#mcount').textContent=q||cat||avail?`${l.length} of ${all.length} item${all.length>1?'s':''}`:`${all.length} item${all.length>1?'s':''} on the menu`;
     $('#grid').innerHTML=l.length?l.map(f=>`
       <div class="col-6 col-lg-4 col-xl-3">
         <div class="card fcard h-100 ${f.available?'':'opacity-75'}">
           <a href="food-details.html?id=${f.id}" class="fimg">${fImg(f)}</a>
           <div class="p-3 d-flex flex-column flex-grow-1">
-            <h6 class="fw-bold mb-1 text-truncate" title="${esc(f.name)}">${esc(f.name)}</h6>
-            <p class="text-muted small mb-2 text-truncate">${esc(f.desc||'')}</p>
+            <h6 class="fw-bold mb-1 text-truncate" title="${esc(f.name)}">${hl(f.name,q)}</h6>
+            <p class="text-muted small mb-2 text-truncate">${hl(f.desc||'',q)}</p>
             ${f.available&&f.stockQty!=null&&f.stockQty<=10?`<div class="mb-2"><span class="badge-status badge-pending">${f.stockQty} left</span></div>`:''}
             <div class="d-flex justify-content-between align-items-center mt-auto pt-2 border-top">
               <strong class="text-wmsu fs-5">${peso(f.price)}</strong>
@@ -69,9 +94,13 @@ C.menu=async v=>{
             </div>
           </div>
         </div>
-      </div>`).join(''):`<div class="col-12">${empty('search','No food matches your search. Try another word or category.')}</div>`;
+      </div>`).join(''):`<div class="col-12">${empty('search',q?`No dishes match “${esc(q)}”.`:'No items in this view.',`<button class="btn btn-light mt-2" data-act="mClear"><i class="bi bi-x-circle me-1"></i> Clear search &amp; filters</button>`)}</div>`;
   };
-  acts.cat=d=>{cat=+d.id;draw()};$('#q').oninput=e=>{q=e.target.value.toLowerCase().trim();draw()};draw();
+  const reset=bindSearch('q',s=>{q=s;draw()});
+  $('#availOnly').onclick=e=>{avail=!avail;e.currentTarget.classList.toggle('active',avail);e.currentTarget.setAttribute('aria-pressed',avail);draw()};
+  acts.cat=d=>{cat=+d.id;draw()};
+  acts.mClear=()=>{cat=0;avail=false;$('#availOnly').classList.remove('active');reset()};
+  draw();
 };
 
 C['food-details']=async v=>{

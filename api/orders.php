@@ -98,6 +98,9 @@ if ($m === 'PATCH') {
     if ($to === 'Completed' && $o['payment_status'] !== 'Paid') { $pdo->rollBack(); fail('Confirm payment before completing this order.', 409); }
     $reason = $to === 'Cancelled' ? ($u['role'] === 'customer' ? 'Cancelled by customer' : str($b, 'cancel_reason', 3, 200)) : null;
     q('UPDATE orders SET order_status=?,cancel_reason=? WHERE id=?', [$to, $reason, $o['id']]);
+    if ($to === 'Cancelled') { // give limited-stock servings back so cancelled orders don't permanently deplete inventory
+      q('UPDATE foods f JOIN order_items oi ON oi.food_id=f.id SET f.stock_qty=f.stock_qty+oi.qty, f.is_available=1 WHERE oi.order_id=? AND f.stock_qty IS NOT NULL', [$o['id']]);
+    }
     notify($o['user_id'] ? (int)$o['user_id'] : null, (int)$o['id'], "Order {$o['order_no']} is now: $to"); audit('order.status', "{$o['order_no']} {$o['order_status']} -> $to"); $pdo->commit();
   } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
   respond(['order_status' => $to]);
