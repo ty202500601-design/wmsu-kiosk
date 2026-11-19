@@ -29,11 +29,17 @@ if ($m === 'POST') {
   $items = $b['items'] ?? null; if (!is_array($items) || !$items || count($items) > 30) fail('Your cart is empty or too large.', 422);
   $qty = []; foreach ($items as $i) { $fid = (int)($i['food_id'] ?? 0); $n = (int)($i['qty'] ?? 0); if ($fid < 1 || $n < 1 || $n > 20) fail('Invalid item or quantity.', 422); $qty[$fid] = min(20, ($qty[$fid] ?? 0) + $n); }
   $ph = implode(',', array_fill(0, count($qty), '?'));
-  $foods = q("SELECT f.id, f.vendor_id, f.name, f.price, v.user_id vendor_user, v.name vendor_name, v.is_open, v.status vendor_status FROM foods f JOIN vendors v ON v.id=f.vendor_id WHERE f.is_available=1 AND f.id IN($ph)", array_keys($qty))->fetchAll();
+  $foods = q("SELECT f.id, f.vendor_id, f.name, f.price, v.user_id vendor_user, v.name vendor_name, v.is_open, v.status vendor_status, v.gcash_number, v.maya_number FROM foods f JOIN vendors v ON v.id=f.vendor_id WHERE f.is_available=1 AND f.id IN($ph)", array_keys($qty))->fetchAll();
   if (count($foods) !== count($qty)) fail('One or more items are unavailable or not found.', 409);
   foreach ($foods as $f) {
     if (!$f['is_open'] || $f['vendor_status'] !== 'active') {
       fail("Stall \"{$f['vendor_name']}\" is closed right now.", 409);
+    }
+    if ($method === 'gcash' && trim((string)$f['gcash_number']) === '') {
+      fail("GCash is unavailable for \"{$f['vendor_name']}\" because they have not registered a GCash account.", 409);
+    }
+    if ($method === 'maya' && trim((string)$f['maya_number']) === '') {
+      fail("Maya is unavailable for \"{$f['vendor_name']}\" because they have not registered a Maya account.", 409);
     }
   }
   $by_vendor = [];

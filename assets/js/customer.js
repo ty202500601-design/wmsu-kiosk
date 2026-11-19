@@ -10,9 +10,10 @@ C.vendors=async v=>{
     <div class="col-md-6 col-lg-4">
       <div class="card vcard h-100">
         <div class="vcard-banner">
-          <div class="vcard-avatar">${x.emoji||'🍽️'}</div>
+          ${x.banner?`<img src="${esc(x.banner)}" alt="${esc(x.name)} banner">`:''}
         </div>
-        <div class="p-4 d-flex flex-column flex-grow-1 text-center">
+        <div class="vcard-avatar">${x.emoji||'🍽️'}</div>
+        <div class="p-4 pt-2 d-flex flex-column flex-grow-1 text-center">
           <h5 class="fw-bold mb-1 text-truncate" title="${esc(x.name)}">${esc(x.name)}</h5>
           <p class="text-muted small vcard-desc mb-3">${esc(x.desc||'Campus food stall')}</p>
           <div class="mb-3">
@@ -33,12 +34,16 @@ C.menu=async v=>{
   const [vs,cs,fs]=await Promise.all([API.list('vendors'),API.list('categories'),API.list('foods')]),ven=vs.find(x=>x.id===vid),all=fs.filter(f=>f.vendorId===vid);all.forEach(f=>FOODS[f.id]=f);
   const mine=cs.filter(c=>all.some(f=>f.catId===c.id));let cat=0,q='';
   v.innerHTML=`
-    <div class="mb-4">
+    <div class="mb-3">
       <a href="vendors.html" class="text-wmsu text-decoration-none small fw-semibold d-inline-flex align-items-center gap-1 mb-2">
         <i class="bi bi-arrow-left"></i> All Vendors
       </a>
-      <div class="d-flex justify-content-between flex-wrap gap-2 align-items-end">
-        ${head(ven?esc(ven.name):'Menu',ven?.desc?esc(ven.desc):'Pick your meal.')}
+      <div class="storefront-banner ${ven?.banner?'has-img':''}">
+        ${ven?.banner?`<img class="storefront-banner-img" src="${esc(ven.banner)}" alt="${esc(ven.name)} banner">`:''}
+        <div class="storefront-banner-body">
+          <h2 class="page-title mb-1">${ven?esc(ven.name):'Menu'}</h2>
+          <p class="text-muted mb-0">${ven?.desc?esc(ven.desc):'Pick your meal.'}</p>
+        </div>
       </div>
     </div>
     <div class="input-group input-group-lg mb-3">
@@ -191,19 +196,28 @@ C.payment=async v=>{
   const byV={};
   cart.get().items.forEach(i=>{if(!byV[i.vendorId])byV[i.vendorId]=0;byV[i.vendorId]+=i.price*i.qty});
   const stallTotals=Object.entries(byV).map(([vid,tot])=>({ven:vs.find(x=>x.id===+vid)||{},tot}));
+  const missingGcash=stallTotals.filter(x=>!String(x.ven.gcashNumber||'').trim()).map(x=>x.ven.name||'this vendor');
+  const missingMaya=stallTotals.filter(x=>!String(x.ven.mayaNumber||'').trim()).map(x=>x.ven.name||'this vendor');
+  let reqSet=false;
   v.innerHTML=head('Choose payment',`Total to pay: <b class="text-wmsu">${peso(cart.total())}</b>`)+`
     <form id="pf" novalidate>
       <div class="row g-3 mb-3">
-        ${on.map((k,i)=>`
-          <div class="col-6 col-lg-3">
-            <label class="w-100 h-100">
-              <input type="radio" class="d-none" name="pay" value="${k}" ${i?'':'required'}>
-              <span class="opt">
-                <i class="bi bi-${PAYS[k][0]}"></i>
-                <h6 class="mt-2 mb-0 fw-bold">${PAYS[k][1]}</h6>
-              </span>
-            </label>
-          </div>`).join('')}
+        ${on.map(k=>{
+          const missing=k==='gcash'?missingGcash:k==='maya'?missingMaya:[];
+          const isDis=missing.length>0;
+          const req=!isDis&&!reqSet?(reqSet=true,'required'):'';
+          return `
+            <div class="col-6 col-lg-3">
+              <label class="w-100 h-100">
+                <input type="radio" class="d-none" name="pay" value="${k}" ${isDis?'disabled':req}>
+                <span class="opt ${isDis?'disabled':''}">
+                  <i class="bi bi-${PAYS[k][0]}"></i>
+                  <h6 class="mt-2 mb-0 fw-bold">${PAYS[k][1]}</h6>
+                  ${isDis?`<div class="small text-danger mt-1" style="font-size:.75rem;line-height:1.2">${PAYS[k][1]} unavailable (${esc(missing.join(', '))})</div>`:''}
+                </span>
+              </label>
+            </div>`;
+        }).join('')}
       </div>
       <div id="pinfo" class="mb-4"></div>
       <div class="text-danger small mb-3 d-none" id="perr">Please select a payment method.</div>

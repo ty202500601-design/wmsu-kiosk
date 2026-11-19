@@ -21,59 +21,6 @@ const ocols=[
 ];
 
 V.login=async v=>loginPage('vendor',v);
-V.apply=async v=>{
-  v.innerHTML=`
-    <div class="card p-4 mx-auto my-4" style="max-width:540px">
-      <div class="text-center mb-3">
-        <img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal">
-        <h4 class="mt-3 fw-bold">Apply as Vendor</h4>
-        <p class="text-muted small">Register your food stall for the campus canteen kiosk.</p>
-      </div>
-      <form id="af" novalidate>
-        <div class="mb-3">
-          <label class="form-label">Stall / Business Name</label>
-          <input name="stall_name" class="form-control" placeholder="e.g. Aling Nena's Kitchen" minlength="2" maxlength="100" required>
-          <div class="invalid-feedback">Enter your stall name (2-100 characters).</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Owner Full Name</label>
-          <input name="owner_name" class="form-control" placeholder="e.g. Maria Santos" minlength="2" maxlength="100" required>
-          <div class="invalid-feedback">Enter owner name.</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Contact Phone</label>
-          <input name="phone" class="form-control" placeholder="0917 123 4567" pattern="[0-9 +]{7,20}" required>
-          <div class="invalid-feedback">Enter a valid phone number (7-20 digits).</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Email Address</label>
-          <input type="email" name="email" class="form-control" placeholder="vendor@example.com" required>
-          <div class="invalid-feedback">Enter a valid email.</div>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Password</label>
-          <input type="password" name="password" class="form-control" minlength="8" maxlength="72" placeholder="At least 8 chars (letters and numbers)" required>
-          <div class="invalid-feedback">Password must be 8-72 characters with letters and numbers.</div>
-        </div>
-        <button class="btn btn-wmsu btn-lg w-100">Submit Application</button>
-      </form>
-      <div class="text-center mt-3">
-        <a class="small text-wmsu" href="login.html"><i class="bi bi-arrow-left"></i> Already have an account? Sign in</a>
-      </div>
-    </div>`;
-  onForm('#af',async d=>{
-    if(!/[A-Za-z]/.test(d.password)||!/\d/.test(d.password))return toast('Password must contain letters and numbers.','danger');
-    await API.f('vendors',{m:'POST',q:{action:'apply'},b:d});
-    v.innerHTML=`
-      <div class="card p-5 mx-auto my-4 text-center" style="max-width:540px">
-        <i class="bi bi-check-circle-fill text-success" style="font-size:4rem"></i>
-        <h3 class="fw-bold mt-2">Application Submitted!</h3>
-        <p class="text-muted">Your vendor application has been sent for review by the campus canteen administrator.</p>
-        <p class="small text-muted">Once approved, you will be able to sign in using your email and password.</p>
-        <a class="btn btn-wmsu mt-3" href="login.html">Go to Vendor Login</a>
-      </div>`;
-  });
-};
 
 V.dashboard=async v=>{
   const [os,r,me]=await Promise.all([myOrd(),API.report('dashboard').catch(()=>null),API.list('vendors').then(a=>a.find(x=>x.id===vid()))]);
@@ -190,15 +137,26 @@ V.profile=async v=>{
   v.innerHTML=`
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Stall Profile</h4>
-      <p class="text-muted small mb-0">Update stall information, contact details, and your e-wallet receiving accounts.</p>
+      <p class="text-muted small mb-0">Update stall information, canteen banner, and your e-wallet receiving accounts.</p>
     </div>
     <form id="pf" class="card p-4" style="max-width:640px" novalidate>
       <div class="mb-3"><label class="form-label">Stall name</label><input name="name" class="form-control" value="${esc(x.name)}" required></div>
       <div class="mb-3"><label class="form-label">Description</label><input name="desc" class="form-control" value="${esc(x.desc)}" required></div>
       <div class="mb-3"><label class="form-label">Contact number</label><input name="phone" class="form-control" pattern="[0-9 +]{7,15}" value="${esc(x.phone)}" required><div class="invalid-feedback">Enter a valid phone number.</div></div>
       <div class="card bg-light p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold mb-0"><i class="bi bi-image text-wmsu me-1"></i> Canteen Banner</h6>
+          ${x.banner?`<button type="button" class="btn btn-sm btn-outline-danger" data-act="delBanner" data-id="${x.id}"><i class="bi bi-trash"></i> Remove Banner</button>`:''}
+        </div>
+        <div id="bannerPreview" class="mb-2">
+          ${x.banner?`<img src="${esc(x.banner)}" alt="Stall banner" style="width:100%;height:140px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:`<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No banner uploaded (default theme banner will be shown)</div>`}
+        </div>
+        <input type="file" name="banner" id="bannerInput" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm">
+        <div class="form-text">Recommended wide image (JPG, PNG, or WebP, max 2 MB).</div>
+      </div>
+      <div class="card bg-light p-3 mb-3">
         <h6 class="fw-bold mb-2"><i class="bi bi-wallet2 text-wmsu me-1"></i> E-Wallet Payment Accounts</h6>
-        <p class="small text-muted mb-3">Customers will send their GCash or Maya payments directly to these details.</p>
+        <p class="small text-muted mb-3">Customers will send their GCash or Maya payments directly to these details. Leave blank if you do not accept e-wallet.</p>
         <div class="row g-2 mb-2">
           <div class="col-sm-6"><label class="form-label small mb-1">GCash Mobile Number</label><input name="gcashNumber" class="form-control" placeholder="e.g. 0917 123 4567" value="${esc(x.gcashNumber)}"></div>
           <div class="col-sm-6"><label class="form-label small mb-1">GCash Account Name</label><input name="gcashName" class="form-control" placeholder="e.g. Juan Dela Cruz" value="${esc(x.gcashName)}"></div>
@@ -211,5 +169,17 @@ V.profile=async v=>{
       <div class="form-check form-switch mb-4"><input class="form-check-input" type="checkbox" name="open" ${x.open?'checked':''}><label class="form-check-label fw-semibold">Stall is open for orders</label></div>
       <div><button class="btn btn-wmsu px-4">Save Profile</button></div>
     </form>`;
-  onForm('#pf',async d=>{await API.save('vendors',{id:x.id,...d,open:!!d.open});toast('Profile saved','success')});
+  $('#bannerInput').onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    if(f.size>2*1024*1024){toast('Banner image must be 2 MB or smaller.','danger');e.target.value='';return}
+    $('#bannerPreview').innerHTML=`<img src="${URL.createObjectURL(f)}" alt="Banner preview" style="width:100%;height:140px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
+  };
+  onForm('#pf',async d=>{
+    if(d.banner&&d.banner.size>2*1024*1024)return toast('Banner image must be 2 MB or smaller.','danger');
+    await API.save('vendors',{id:x.id,name:d.name,desc:d.desc,phone:d.phone,gcashNumber:d.gcashNumber,gcashName:d.gcashName,mayaNumber:d.mayaNumber,mayaName:d.mayaName,open:!!d.open});
+    if(d.banner&&d.banner.size)await API.uploadBanner(x.id,d.banner);
+    toast('Profile saved','success');
+    refresh();
+  });
 };
+acts.delBanner=async d=>{if(await confirmBox('Remove your canteen banner?','Remove')){await API.removeBanner(+d.id);toast('Banner removed');refresh()}};

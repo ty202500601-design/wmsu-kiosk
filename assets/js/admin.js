@@ -20,8 +20,7 @@ A.dashboard=async v=>{
       ${stat('people','Total users',r.total_users)
         +stat('shop','Active vendors',r.total_vendors)
         +stat('receipt','Total orders',total)
-        +stat('cash-stack','Total sales (paid)',peso(r.total_sales))
-        +stat('file-earmark-check','Pending applications',r.pending_applications)}
+        +stat('cash-stack','Total sales (paid)',peso(r.total_sales))}
     </div>
     <h5 class="fw-bold mb-3">Recent Transactions</h5>
     ${table([
@@ -66,17 +65,118 @@ acts.addU=async()=>{
 A.vendors=async v=>{
   const vs=(await API.list('vendors')).filter(x=>['active','suspended'].includes(x.status));
   v.innerHTML=`
-    <div class="mb-4">
-      <h4 class="fw-bold mb-1">Campus Vendors</h4>
-      <p class="text-muted small mb-0">Active food stalls and vendor partners operating in the canteen.</p>
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h4 class="fw-bold mb-1">Campus Vendors</h4>
+        <p class="text-muted small mb-0">Create and manage office-approved food stalls and vendor accounts.</p>
+      </div>
+      <button class="btn btn-wmsu" data-act="addV"><i class="bi bi-plus-lg"></i> Add Vendor</button>
     </div>
     ${table([
       ['Stall',x=>`${x.emoji} <b>${esc(x.name)}</b>`],
-      ['Owner',x=>esc(x.owner)],
+      ['Owner / Email',x=>`${esc(x.owner)}<br><small class="text-muted">${esc(x.email)}</small>`],
       ['Phone',x=>esc(x.phone)],
+      ['E-Wallet',x=>{
+        const hasG=!!String(x.gcashNumber||'').trim(), hasM=!!String(x.mayaNumber||'').trim();
+        return (hasG||hasM)?`<span class="badge-status badge-success">Registered</span><br><small class="text-muted">${[hasG?'GCash':'',hasM?'Maya':''].filter(Boolean).join(' · ')}</small>`:'<span class="badge-status badge-neutral">Not Registered</span>';
+      }],
       ['Status',x=>badge(x.status)],
-      ['',x=>`<div class="d-flex gap-1 justify-content-end">${tgl('vendors',x.id,x.status,'active','suspended')} ${del('vendors',x.id)}</div>`]
+      ['',x=>`<div class="d-flex gap-1 justify-content-end"><button class="btn btn-sm btn-light" data-act="viewV" data-id="${x.id}"><i class="bi bi-eye"></i> Details</button> ${tgl('vendors',x.id,x.status,'active','suspended')} ${del('vendors',x.id)}</div>`]
     ],vs)}`;
+};
+acts.viewV=async d=>{
+  const x=(await API.list('vendors')).find(v=>v.id===+d.id);
+  if(!x)return toast('Vendor not found.','danger');
+  const hasG=!!String(x.gcashNumber||'').trim(), hasM=!!String(x.mayaNumber||'').trim();
+  const el=document.createElement('div');el.className='modal fade';
+  el.innerHTML=`<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-shop text-wmsu me-1"></i> ${esc(x.name)}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+    <div class="row g-3 mb-3 small">
+      <div class="col-sm-6"><b>Owner:</b> ${esc(x.owner)}<br><b>Email:</b> ${esc(x.email)}<br><b>Phone:</b> ${esc(x.phone)}</div>
+      <div class="col-sm-6"><b>Status:</b> ${badge(x.status)} ${badge(x.open?'Open now':'Closed')}<br><div class="mt-1 text-muted">${esc(x.desc||'No description.')}</div></div>
+    </div>
+    <div class="card bg-light p-3 mb-3">
+      <h6 class="fw-bold mb-2"><i class="bi bi-wallet2 text-wmsu me-1"></i> E-Wallet Registration Status</h6>
+      <div class="row g-2 small">
+        <div class="col-sm-6">
+          <div class="p-2 bg-white rounded border">
+            <div class="d-flex justify-content-between align-items-center mb-1"><b>GCash</b> ${hasG?'<span class="badge-status badge-success">Registered</span>':'<span class="badge-status badge-neutral">Not Registered</span>'}</div>
+            ${hasG?`<div>${esc(x.gcashNumber)}</div><div class="text-muted">${esc(x.gcashName||'-')}</div>`:'<div class="text-muted">GCash will be unavailable for this vendor at checkout.</div>'}
+          </div>
+        </div>
+        <div class="col-sm-6">
+          <div class="p-2 bg-white rounded border">
+            <div class="d-flex justify-content-between align-items-center mb-1"><b>Maya</b> ${hasM?'<span class="badge-status badge-success">Registered</span>':'<span class="badge-status badge-neutral">Not Registered</span>'}</div>
+            ${hasM?`<div>${esc(x.mayaNumber)}</div><div class="text-muted">${esc(x.mayaName||'-')}</div>`:'<div class="text-muted">Maya will be unavailable for this vendor at checkout.</div>'}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card bg-light p-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0"><i class="bi bi-image text-wmsu me-1"></i> Canteen Banner</h6>
+        ${x.banner?'<button type="button" class="btn btn-sm btn-outline-danger" id="admBDel"><i class="bi bi-trash"></i> Remove</button>':''}
+      </div>
+      <div id="admBPrev" class="mb-2">
+        ${x.banner?`<img src="${esc(x.banner)}" alt="Banner" style="width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:'<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No canteen banner uploaded</div>'}
+      </div>
+      <div class="input-group input-group-sm">
+        <input type="file" id="admBFile" accept="image/jpeg,image/png,image/webp" class="form-control">
+        <button type="button" class="btn btn-wmsu" id="admBUp"><i class="bi bi-upload"></i> Upload Banner</button>
+      </div>
+    </div>
+  </div><div class="modal-footer"><button type="button" class="btn btn-wmsu px-4" data-bs-dismiss="modal">Close</button></div></div></div>`;
+  document.body.append(el);const m=new bootstrap.Modal(el);
+  el.querySelector('#admBUp').onclick=async()=>{
+    const f=el.querySelector('#admBFile').files[0];
+    if(!f)return toast('Choose an image first.','danger');
+    if(f.size>2*1024*1024)return toast('Banner must be 2 MB or smaller.','danger');
+    const r=await API.uploadBanner(x.id,f);
+    el.querySelector('#admBPrev').innerHTML=`<img src="${ROOT}uploads/banners/${esc(r.banner)}" alt="Banner" style="width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`;
+    toast('Banner updated','success');refresh();
+  };
+  const delBtn=el.querySelector('#admBDel');
+  if(delBtn)delBtn.onclick=async()=>{
+    await API.removeBanner(x.id);
+    el.querySelector('#admBPrev').innerHTML='<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No canteen banner uploaded</div>';
+    delBtn.remove();toast('Banner removed');refresh();
+  };
+  el.addEventListener('hidden.bs.modal',()=>el.remove());
+  m.show();
+};
+acts.addV=async()=>{
+  const r=await modal('Add Vendor Account',`
+    <div class="mb-2"><label class="form-label">Stall / Business Name</label><input name="stall_name" class="form-control" placeholder="e.g. Aling Nena's Kitchen" minlength="2" maxlength="100" required><div class="invalid-feedback">Enter stall name (2-100 chars).</div></div>
+    <div class="mb-2"><label class="form-label">Owner Full Name</label><input name="owner_name" class="form-control" placeholder="e.g. Maria Santos" minlength="2" maxlength="100" required><div class="invalid-feedback">Enter owner name (2-100 chars).</div></div>
+    <div class="mb-2"><label class="form-label">Stall Description <span class="text-muted fw-normal">(optional)</span></label><input name="description" class="form-control" placeholder="e.g. Filipino rice meals and silog" maxlength="255"></div>
+    <div class="row g-2 mb-2">
+      <div class="col-sm-6"><label class="form-label">Contact Phone</label><input name="phone" class="form-control" placeholder="0917 123 4567" pattern="[0-9 +]{7,20}" required><div class="invalid-feedback">7-20 digits.</div></div>
+      <div class="col-sm-6"><label class="form-label">Login Email</label><input type="email" name="email" class="form-control" placeholder="stall@wmsu.edu.ph" required><div class="invalid-feedback">Enter a valid email.</div></div>
+    </div>
+    <div class="mb-2"><label class="form-label">Initial Password</label><input type="password" name="password" class="form-control" placeholder="8+ characters with letters and numbers" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,72}" required><div class="invalid-feedback">8-72 characters with at least one letter and one number.</div></div>
+    <div class="row g-2">
+      <div class="col-sm-6"><label class="form-label small">GCash Number <span class="text-muted fw-normal">(optional)</span></label><input name="gcash_number" class="form-control form-control-sm" placeholder="0917 123 4567"></div>
+      <div class="col-sm-6"><label class="form-label small">GCash Account Name</label><input name="gcash_name" class="form-control form-control-sm" placeholder="Account name"></div>
+    </div>
+  `,'Create Vendor');
+  if(!r)return;
+  await API.save('vendors',r);
+  toast('Vendor account created & activated','success');
+  await modal('Vendor Account Created',`
+    <div class="alert alert-success small mb-3"><i class="bi bi-check-circle-fill me-1"></i> <b>${esc(r.stall_name)}</b> is now active and ready to sign in.</div>
+    <p class="small text-muted mb-2">Hand off these credentials to the vendor:</p>
+    <div class="card bg-light p-3 small mb-2">
+      <div class="mb-2"><b>Vendor Portal:</b> <code>${esc(location.origin + location.pathname.replace(/\/admin\/.*/, '/vendor/login.html'))}</code></div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div><b>Email:</b> <code>${esc(r.email)}</code></div>
+        <button type="button" class="btn btn-sm btn-light" data-act="copy" data-v="${esc(r.email)}"><i class="bi bi-clipboard"></i> Copy</button>
+      </div>
+      <div class="d-flex justify-content-between align-items-center">
+        <div><b>Password:</b> <code>${esc(r.password)}</code></div>
+        <button type="button" class="btn btn-sm btn-light" data-act="copy" data-v="${esc(r.password)}"><i class="bi bi-clipboard"></i> Copy</button>
+      </div>
+    </div>
+  `,'Done','btn-wmsu',false);
+  refresh();
 };
 
 A.applications=async v=>{

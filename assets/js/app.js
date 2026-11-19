@@ -31,7 +31,7 @@ const API={
    switch(t){
    case'vendors':{let rows=await this.f('vendors',B.role==='admin'?{q:{scope:'all'}}:{});
      if(B.role==='vendor'){const me=await this.f('vendors',{q:{me:1}});rows=rows.filter(x=>+x.id!==+me.id);rows.push(me)}
-     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||'',gcashNumber:x.gcash_number||'',gcashName:x.gcash_name||'',mayaNumber:x.maya_number||'',mayaName:x.maya_name||''}))}
+     return rows.map(x=>({id:+x.id,name:x.name,desc:x.description||'',emoji:'🍽️',status:x.status||'active',open:!!+x.is_open,owner:x.owner_name||'',phone:x.phone||'',email:x.email||'',gcashNumber:x.gcash_number||'',gcashName:x.gcash_name||'',mayaNumber:x.maya_number||'',mayaName:x.maya_name||'',banner:x.banner?`${ROOT}uploads/banners/${x.banner}`:''}))}
    case'applications':return (await this.f('vendors',{q:{scope:'all'}})).map(x=>({id:+x.id,stall:x.name,owner:x.owner_name,email:x.email,phone:x.phone,status:x.status==='pending'?'pending':x.status==='rejected'?'rejected':'approved'}));
    case'categories':return (await this.f('categories',B.role==='vendor'?{q:{vendor_id:SES()?.vendorId}}:{})).map(c=>({id:+c.id,vendorId:c.vendor_id==null?null:+c.vendor_id,name:c.name,icon:c.icon||'🍽️'}));
    case'foods':{const [rows,cs]=await Promise.all([this.f('foods',STAFF?{q:{manage:1}}:{}),this.list('categories')]);
@@ -47,7 +47,7 @@ const API={
    case'categories':{const b=pick({name:it.name,icon:it.icon});return id?this.f('categories',{m:'PATCH',q:{id},b}):this.f('categories',{m:'POST',b})}
    case'foods':{const b=pick({name:it.name,description:it.desc,price:it.price,is_available:it.available,category_id:it.catId});
      return id?this.f('foods',{m:'PATCH',q:{id},b}):this.f('foods',{m:'POST',b:{...b,vendor_id:it.vendorId}})}
-   case'vendors':return this.f('vendors',{m:'PATCH',q:{id},b:pick({name:it.name,description:it.desc,phone:it.phone,is_open:it.open,status:it.status,gcash_number:it.gcashNumber,gcash_name:it.gcashName,maya_number:it.mayaNumber,maya_name:it.mayaName})});
+   case'vendors':return id?this.f('vendors',{m:'PATCH',q:{id},b:pick({name:it.name,description:it.desc,phone:it.phone,is_open:it.open,status:it.status,gcash_number:it.gcashNumber,gcash_name:it.gcashName,maya_number:it.mayaNumber,maya_name:it.mayaName})}):this.f('vendors',{m:'POST',b:it});
    case'applications':return this.f('vendors',{m:'PATCH',q:{id},b:{status:it.status==='approved'?'active':'rejected'}});
    case'users':return id?this.f('users',{m:'PATCH',q:{id},b:pick({status:it.status})}):this.f('users',{m:'POST',b:{name:it.name,email:it.email,password:it.password,role:it.role}});
    case'settings':return this.f('settings',{m:'PATCH',b:{canteen_name:it.canteen,open_time:it.open,close_time:it.close,pay_cash:!!it.cash,pay_gcash:!!it.gcash,pay_maya:!!it.maya,gcash_number:it.gcashNumber||'',gcash_name:it.gcashName||'',maya_number:it.mayaNumber||'',maya_name:it.mayaName||''}});
@@ -65,6 +65,8 @@ const API={
   pay(orderId,action){return this.f('payments',{m:'PATCH',q:{order_id:orderId},b:{action}})},
   submitRef(no,code,reference){return this.f('payments',{m:'PATCH',b:{action:'submit_reference',order_no:no,code,reference}})},
   upload(foodId,file){const fd=new FormData();fd.append('image',file);return this.f('foods',{m:'POST',q:{action:'image',id:foodId},b:fd,raw:true})},
+  uploadBanner(vendorId,file){const fd=new FormData();fd.append('banner',file);return this.f('vendors',{m:'POST',q:{action:'banner',id:vendorId},b:fd,raw:true})},
+  removeBanner(vendorId){return this.f('vendors',{m:'DELETE',q:{action:'banner',id:vendorId}})},
   report(type,q={}){return this.f('reports',{q:{type,from:'2000-01-01',...q}})},
   async login(role,email,password){let d;try{d=await this.f('auth',{m:'POST',q:{action:'login'},b:{email,password}})}catch(e){toast(e.message,'danger');return null}
    _csrf=d.csrf;
@@ -117,8 +119,8 @@ const bars=d=>{const m=Math.max(1,...d.map(x=>x[1]));return d.map(x=>`<div class
 const refresh=()=>boot(true);
 function toast(m,t='dark'){const e=document.createElement('div');e.className=`toast show align-items-center text-bg-${t} border-0 mb-2 shadow`;e.innerHTML=`<div class="d-flex"><div class="toast-body">${esc(m)}</div></div>`;$('#toasts').append(e);setTimeout(()=>e.remove(),t==='danger'?5000:2500)}
 
-function modal(title,body,ok='Confirm',cls='btn-wmsu'){return new Promise(res=>{const d=document.createElement('div');d.className='modal fade';
- d.innerHTML=`<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate><div class="modal-header"><h5 class="modal-title fw-bold">${title}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${body}</div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn ${cls} px-4">${ok}</button></div></form></div>`;
+function modal(title,body,ok='Confirm',cls='btn-wmsu',showCancel=true){return new Promise(res=>{const d=document.createElement('div');d.className='modal fade';
+ d.innerHTML=`<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate><div class="modal-header"><h5 class="modal-title fw-bold">${title}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">${body}</div><div class="modal-footer">${showCancel?'<button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>':''}<button class="btn ${cls} px-4">${ok}</button></div></form></div>`;
  document.body.append(d);const m=new bootstrap.Modal(d);let out=null;
  d.querySelector('form').onsubmit=e=>{e.preventDefault();if(!e.target.checkValidity()){e.target.classList.add('was-validated');return}out=Object.fromEntries(new FormData(e.target));m.hide()};
  d.addEventListener('hidden.bs.modal',()=>{d.remove();res(out)});m.show()})}
@@ -141,25 +143,25 @@ acts.payA=async d=>{const t={confirm_cash:'Confirm that the cash was received?',
 /* ---- Shell: reusable header / sidebar / footer ---- */
 const NAV={customer:[['vendors.html','shop','Vendors'],['tracking.html','geo-alt','Track Order'],['history.html','clock-history','History']],
  vendor:[['dashboard','speedometer2','Dashboard'],['orders','bell','Incoming Orders'],['menu','egg-fried','Food Menu'],['categories','tags','Categories'],['reports','graph-up','Sales Reports'],['profile','person-badge','Profile']],
- admin:[['dashboard','speedometer2','Dashboard'],['users','people','Users'],['vendors','shop','Vendors'],['applications','file-earmark-check','Applications'],['foods','egg-fried','Food Items'],['categories','tags','Categories'],['orders','receipt','Orders'],['payments','credit-card','Payments'],['reports','graph-up','Reports'],['settings','gear','Settings']]};
+ admin:[['dashboard','speedometer2','Dashboard'],['users','people','Users'],['vendors','shop','Vendors'],['foods','egg-fried','Food Items'],['categories','tags','Categories'],['orders','receipt','Orders'],['payments','credit-card','Payments'],['reports','graph-up','Reports'],['settings','gear','Settings']]};
 
 const brand=(t)=>`<a class="brand" href="${ROOT}index.html"><img class="logo-img" src="${ROOT}assets/img/wmsu-logo.png" width="40" height="40" alt="WMSU seal"><div class="brand-text"><span class="brand-name">WMSU</span><small class="brand-sub">${t}</small></div></a>`;
 
 function shell(){const {role,page}=B,title=document.title.split(' |')[0];
- if(page==='login'||page==='apply'){$('#shell').innerHTML='<main id="view" class="container"></main>';return}
+ if(page==='login'){$('#shell').innerHTML='<main id="view" class="container"></main>';return}
  if(role==='customer'){const p=B.page,isV=['vendors','menu','food-details'].includes(p),a=n=>(n==='vendors.html'&&isV)||n===p+'.html'?'active':'';
   $('#shell').innerHTML=`<header class="topbar"><div class="container-xl d-flex flex-wrap align-items-center justify-content-between gap-2 gap-md-3">${brand('Canteen Kiosk')}<div class="d-flex align-items-center gap-2 order-md-3"><a class="btn ${p==='cart'||p==='checkout'?'btn-wmsu':'btn-outline-wmsu'} btn-sm d-inline-flex align-items-center gap-2 px-3 py-2" href="cart.html"><i class="bi bi-cart3"></i><span class="d-none d-sm-inline">Cart</span><span class="badge ${p==='cart'||p==='checkout'?'bg-light text-dark':'bg-danger text-white'}" id="cartCount">0</span></a></div><nav class="nav order-3 order-md-2 w-100 w-md-auto ms-md-auto gap-1 pt-2 pt-md-0 border-top border-md-0">${NAV.customer.map(n=>`<a class="${a(n[0])}" href="${n[0]}"><i class="bi bi-${n[1]}"></i><span>${n[2]}</span></a>`).join('')}</nav></div></header><main id="view" class="container-xl py-4"></main><footer class="text-center text-muted small py-4 border-top mt-5"><div class="container">© Western Mindanao State University · Canteen Self-Service Kiosk</div></footer>`;updateCart();return}
  const s=SES();if(!s||s.role!==role){location='login.html';return}
  $('#shell').innerHTML=`<aside class="side no-print"><div class="side-header">${brand(role==='admin'?'Admin Portal':'Vendor Portal')}</div><hr class="side-divider d-none d-lg-block"><nav class="side-nav">${NAV[role].map(n=>`<a class="${n[0]===page||(page.includes('food')&&n[0]==='menu')?'active':''}" href="${n[0]}.html"><i class="bi bi-${n[1]}"></i> <span>${n[2]}</span></a>`).join('')}</nav></aside><div class="content"><div class="top2 no-print"><h5 class="mb-0 fw-bold">${title}</h5><div class="d-flex align-items-center gap-3"><span class="text-muted small d-none d-sm-inline"><i class="bi bi-person-circle text-wmsu me-1"></i> ${esc(s.name)}</span><button class="btn btn-outline-wmsu btn-sm" data-act="logout"><i class="bi bi-box-arrow-right me-1"></i> Logout</button></div></div><main id="view" class="p-4"></main></div>`}
 
 async function boot(again){if(!again){shell();if(!$('#view'))return;
-  if(STAFF&&B.page!=='login'&&B.page!=='apply'){let u=null;try{u=await API.me()}catch{}if(!u||u.role!==B.role){sessionStorage.removeItem('wmsu_session');location='login.html';return}}}const v=$('#view');if(!again)v.innerHTML=spinner;
+  if(STAFF&&B.page!=='login'){let u=null;try{u=await API.me()}catch{}if(!u||u.role!==B.role){sessionStorage.removeItem('wmsu_session');location='login.html';return}}}const v=$('#view');if(!again)v.innerHTML=spinner;
  try{await PAGES[B.role][B.page](v)}catch(e){v.innerHTML=empty('exclamation-triangle',`Couldn't load this page (${esc(e.message)}). Check your connection and try again.`,'<button class="btn btn-wmsu mt-2" onclick="refresh()">Retry</button>')}}
 document.addEventListener('DOMContentLoaded',()=>boot());
 
 /* ---- Shared pages ---- */
 function loginPage(role,v){
- v.innerHTML=`<div class="login-card card p-4"><div class="text-center mb-3"><img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal"><h4 class="mt-3 fw-bold">${role==='admin'?'Admin':'Vendor'} Login</h4></div><form id="lf" novalidate><div class="mb-3"><label class="form-label">Email</label><input type="email" name="u" class="form-control" autocomplete="username" required><div class="invalid-feedback">Enter your email address.</div></div><div class="mb-3"><label class="form-label">Password</label><input type="password" name="p" class="form-control" minlength="8" autocomplete="current-password" required><div class="invalid-feedback">Password must be at least 8 characters.</div></div><button class="btn btn-wmsu btn-lg w-100">Sign in</button></form><p class="small text-muted text-center mt-3 mb-1">Use the account issued by the canteen administrator.</p>${role==='vendor'?'<div class="text-center mb-2"><a class="small text-wmsu fw-semibold" href="apply.html"><i class="bi bi-shop"></i> Want to sell? Apply as a vendor</a></div>':''}<div class="text-center mt-2"><a class="small text-wmsu" href="${ROOT}index.html">&larr; Back to home</a></div></div>`;
+ v.innerHTML=`<div class="login-card card p-4"><div class="text-center mb-3"><img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal"><h4 class="mt-3 fw-bold">${role==='admin'?'Admin':'Vendor'} Login</h4></div><form id="lf" novalidate><div class="mb-3"><label class="form-label">Email</label><input type="email" name="u" class="form-control" autocomplete="username" required><div class="invalid-feedback">Enter your email address.</div></div><div class="mb-3"><label class="form-label">Password</label><input type="password" name="p" class="form-control" minlength="8" autocomplete="current-password" required><div class="invalid-feedback">Password must be at least 8 characters.</div></div><button class="btn btn-wmsu btn-lg w-100">Sign in</button></form><p class="small text-muted text-center mt-3 mb-1">Use the account issued by the canteen administrator.</p><div class="text-center mt-2"><a class="small text-wmsu" href="${ROOT}index.html">&larr; Back to home</a></div></div>`;
  onForm('#lf',async d=>{const r=await API.login(role,d.u,d.p);if(!r)return;sessionStorage.setItem('wmsu_session',JSON.stringify({role,...r}));location='dashboard.html'})}
 
 async function catPage(v){let cs=await API.list('categories');if(B.role==='vendor')cs=cs.filter(c=>c.vendorId!==null); // shared categories are admin-managed
