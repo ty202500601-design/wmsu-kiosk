@@ -889,3 +889,11 @@ input:checked + .opt {
 .hl { background: #fdf0c4; color: inherit; border-radius: 3px; padding: 0 .1em; }
 .no-anim-children > * { animation: none !important; }
 @media (max-width: 575px) { .search-box { max-width: none; flex-basis: 100%; } }
+
+/* Password visibility toggle */
+.pw-wrap { position: relative; }
+.pw-wrap .form-control { padding-right: 2.8rem; }
+.pw-toggle { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 8px; background: transparent; color: var(--mut); display: grid; place-items: center; cursor: pointer; transition: background var(--dur), color var(--dur); }
+.pw-toggle:hover { background: var(--red-l); color: var(--red); }
+.pw-toggle:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+.pw-wrap .was-validated .form-control:invalid, .was-validated .pw-wrap .form-control:invalid { background-image: none; }
