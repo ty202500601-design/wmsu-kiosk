@@ -37,17 +37,17 @@ if ($m === 'GET') {
     }
     respond(with_items($all, true));
   }
-  $u = need_role('customer', 'vendor', 'admin'); $w = ['1=1']; $p = [];
-  if ($u['role'] === 'vendor') { $w[] = 'o.vendor_id=?'; $p[] = my_vendor_id($u); } elseif ($u['role'] === 'customer') { $w[] = 'o.user_id=?'; $p[] = $u['id']; }
+  $u = need_role('vendor', 'admin'); $w = ['1=1']; $p = [];
+  if ($u['role'] === 'vendor') { $w[] = 'o.vendor_id=?'; $p[] = my_vendor_id($u); }
   if (isset($_GET['id'])) { $w[] = 'o.id=?'; $p[] = id(); }
   if (!empty($_GET['status'])) { $w[] = 'o.order_status=?'; $p[] = one_of($_GET, 'status', array_keys(FLOW)); }
   $rows = q('SELECT o.*,v.name vendor_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE ' . implode(' AND ', $w) . ' ORDER BY o.created_at DESC LIMIT 200', $p)->fetchAll();
   if (isset($_GET['id']) && !$rows) fail('Order not found.', 404); $rows = with_items($rows); respond(isset($_GET['id']) ? $rows[0] : $rows);
 }
 if ($m === 'POST') {
-  $u = me(); $b = body();
+  $b = body();
   $type = one_of($b, 'order_type', ['Dine-In', 'Take-Out']); $method = one_of($b, 'payment_method', methods_enabled());
-  $name = !empty($b['guest_name']) ? str($b, 'guest_name', 2, 60) : ($u ? $u['name'] : 'Guest');
+  $name = str($b, 'guest_name', 2, 60);
   $items = $b['items'] ?? null; if (!is_array($items) || !$items || count($items) > 30) fail('Your cart is empty or too large.', 422);
   $qty = []; foreach ($items as $i) { $fid = (int)($i['food_id'] ?? 0); $n = (int)($i['qty'] ?? 0); if ($fid < 1 || $n < 1 || $n > 20) fail('Invalid item or quantity.', 422); $qty[$fid] = min(20, ($qty[$fid] ?? 0) + $n); }
   $ph = implode(',', array_fill(0, count($qty), '?'));
@@ -78,8 +78,8 @@ if ($m === 'POST') {
     foreach ($by_vendor as $vid => $grp) {
       $cents = array_sum(array_column($grp['items'], 'line'));
       $vtotal = $cents / 100;
-      q('INSERT INTO orders(order_no,track_code,checkout_token,vendor_id,user_id,customer_name,order_type,payment_method,subtotal,total) VALUES(?,NULL,?,?,?,?,?,?,?,?)',
-        ['TMP' . bin2hex(random_bytes(8)), $token, $vid, $u['id'] ?? null, $name, $type, $method, $vtotal, $vtotal]);
+      q('INSERT INTO orders(order_no,track_code,checkout_token,vendor_id,user_id,customer_name,order_type,payment_method,subtotal,total) VALUES(?,NULL,?,?,NULL,?,?,?,?,?)',
+        ['TMP' . bin2hex(random_bytes(8)), $token, $vid, $name, $type, $method, $vtotal, $vtotal]);
       $oid = (int)$pdo->lastInsertId();
       $no = 'WM' . date('ymd') . '-' . str_pad((string)$oid, 5, '0', STR_PAD_LEFT);
       q('UPDATE orders SET order_no=? WHERE id=?', [$no, $oid]);
@@ -105,15 +105,14 @@ if ($m === 'POST') {
   respond(['id' => $created[0]['id'], 'order_no' => $created[0]['order_no'], 'orders' => $created, 'track_code' => null, 'checkout_token' => $token, 'total' => $grand_total, 'order_status' => 'Pending Payment', 'payment_status' => 'Unpaid'], 201);
 }
 if ($m === 'PATCH') {
-  $u = need_role('customer', 'vendor'); $b = body(); $to = one_of($b, 'order_status', array_keys(FLOW)); $pdo = db(); $pdo->beginTransaction();
+  $u = need_role('vendor'); $b = body(); $to = one_of($b, 'order_status', array_keys(FLOW)); $pdo = db(); $pdo->beginTransaction();
   try { $o = q('SELECT o.*,v.user_id vendor_user FROM orders o JOIN vendors v ON v.id=o.vendor_id WHERE o.id=? FOR UPDATE', [id()])->fetch();
-    if (!$o || ($u['role'] === 'vendor' && (int)$o['vendor_id'] !== my_vendor_id($u)) || ($u['role'] === 'customer' && (int)$o['user_id'] !== $u['id'])) { $pdo->rollBack(); fail('Order not found.', 404); }
+    if (!$o || (int)$o['vendor_id'] !== my_vendor_id($u)) { $pdo->rollBack(); fail('Order not found.', 404); }
     if (!in_array($to, FLOW[$o['order_status']], true)) { $pdo->rollBack(); fail("An order that is \"{$o['order_status']}\" cannot move to \"$to\".", 409); }
-    if ($u['role'] === 'customer' && !($to === 'Cancelled' && $o['order_status'] === 'Pending Payment' && $o['payment_status'] === 'Unpaid')) { $pdo->rollBack(); fail('You can only cancel an unpaid order that has not been confirmed.', 403); }
-    if ($to === 'Cancelled' && $o['payment_status'] === 'Paid' && $u['role'] !== 'admin') { $pdo->rollBack(); fail('A paid order can only be cancelled by an admin, who handles the refund.', 403); }
+    if ($to === 'Cancelled' && $o['payment_status'] === 'Paid') { $pdo->rollBack(); fail('A paid order cannot be cancelled here.', 403); }
     if ($o['payment_method'] !== 'cash' && $to !== 'Cancelled' && $o['payment_status'] !== 'Paid') { $pdo->rollBack(); fail('Confirm payment before accepting or preparing an e-wallet order.', 409); }
     if ($to === 'Completed' && $o['payment_status'] !== 'Paid') { $pdo->rollBack(); fail('Confirm payment before completing this order.', 409); }
-    $reason = $to === 'Cancelled' ? ($u['role'] === 'customer' ? 'Cancelled by customer' : str($b, 'cancel_reason', 3, 200)) : null;
+    $reason = $to === 'Cancelled' ? str($b, 'cancel_reason', 3, 200) : null;
     $tc = $o['track_code'];
     if ($o['payment_method'] === 'cash' && $to !== 'Cancelled' && empty($tc)) {
       $tc = generate_track_code();

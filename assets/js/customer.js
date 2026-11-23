@@ -15,53 +15,6 @@ const bindSearch=(id,onChange)=>{const inp=$('#'+id),clr=$('#'+id+'Clear');let t
   document.onkeydown=e=>{if(e.key==='/'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&!document.querySelector('.modal.show')){e.preventDefault();inp.focus()}};
   return ()=>{inp.value='';apply()}};
 
-C.login=async v=>{
-  if(SES()?.role==='customer'){location=`${ROOT}customer/vendors.html`;return}
-  let tab=qs.get('mode')==='register'?'register':'login';
-  const draw=()=>{
-    v.innerHTML=`
-      <div class="login-card card p-4">
-        <div class="text-center mb-3">
-          <img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal">
-          <h4 class="mt-3 fw-bold">Customer ${tab==='login'?'Sign In':'Create Account'}</h4>
-          <p class="text-muted small mb-0">Order faster from campus canteen stalls.</p>
-        </div>
-        <div class="d-flex gap-2 mb-3">
-          <button type="button" class="btn btn-sm flex-fill ${tab==='login'?'btn-wmsu':'btn-light'}" id="tabLogin">Sign In</button>
-          <button type="button" class="btn btn-sm flex-fill ${tab==='register'?'btn-wmsu':'btn-light'}" id="tabReg">Create Account</button>
-        </div>
-        ${tab==='login'?`
-          <form id="clf" novalidate>
-            <div class="mb-3"><label class="form-label">Email</label><input type="email" name="u" class="form-control" autocomplete="username" required><div class="invalid-feedback">Enter your email address.</div></div>
-            <div class="mb-3"><label class="form-label">Password</label><div class="pw-wrap"><input type="password" name="p" id="cpw" class="form-control" minlength="8" autocomplete="current-password" required><button type="button" class="pw-toggle" id="cpwT" aria-label="Show password" aria-pressed="false"><i class="bi bi-eye"></i></button></div><div class="invalid-feedback">Password must be at least 8 characters.</div></div>
-            <button class="btn btn-wmsu btn-lg w-100">Sign In</button>
-          </form>
-        `:`
-          <form id="crf" novalidate>
-            <div class="mb-3"><label class="form-label">Full Name</label><input name="name" class="form-control" minlength="2" maxlength="100" placeholder="e.g. Juan Dela Cruz" required><div class="invalid-feedback">Enter your full name.</div></div>
-            <div class="mb-3"><label class="form-label">Email</label><input type="email" name="email" class="form-control" autocomplete="email" placeholder="student@wmsu.edu.ph" required><div class="invalid-feedback">Enter a valid email address.</div></div>
-            <div class="mb-3"><label class="form-label">Password</label><div class="pw-wrap"><input type="password" name="password" id="cpw" class="form-control" minlength="8" maxlength="72" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,72}" autocomplete="new-password" placeholder="8+ chars with letters and numbers" required><button type="button" class="pw-toggle" id="cpwT" aria-label="Show password" aria-pressed="false"><i class="bi bi-eye"></i></button></div><div class="invalid-feedback">8-72 characters with letters and numbers.</div></div>
-            <button class="btn btn-wmsu btn-lg w-100">Create Account</button>
-          </form>
-        `}
-        <div class="text-center mt-3 pt-3 border-top d-flex flex-column gap-1">
-          <a class="small text-wmsu fw-semibold" href="${ROOT}customer/vendors.html"><i class="bi bi-bag-heart me-1"></i>Continue as Guest / Browse Vendors</a>
-          <a class="small text-muted" href="${ROOT}index.html">&larr; Back to home</a>
-        </div>
-      </div>`;
-    $('#tabLogin').onclick=()=>{tab='login';draw()};
-    $('#tabReg').onclick=()=>{tab='register';draw()};
-    const pwI=$('#cpw'),pwT=$('#cpwT');
-    if(pwI&&pwT)pwT.onclick=()=>{const show=pwI.type==='password';pwI.type=show?'text':'password';pwT.setAttribute('aria-pressed',show);pwT.firstElementChild.className='bi bi-eye'+(show?'-slash':'');pwI.focus()};
-    if(tab==='login'){
-      onForm('#clf',async d=>{const r=await API.login('customer',d.u,d.p);if(!r)return;sessionStorage.setItem('wmsu_session',JSON.stringify({role:'customer',...r}));location=`${ROOT}customer/vendors.html`});
-    }else{
-      onForm('#crf',async d=>{await API.register(d.name,d.email,d.password);const r=await API.login('customer',d.email,d.password);if(r){sessionStorage.setItem('wmsu_session',JSON.stringify({role:'customer',...r}));toast('Account created!','success');location=`${ROOT}customer/vendors.html`}else{tab='login';draw()}});
-    }
-  };
-  draw();
-};
-
 C.vendors=async v=>{
   const vs=(await API.list('vendors')).filter(x=>x.status==='active');
   let q='',onlyOpen=false;
@@ -230,8 +183,7 @@ acts.cclear=async()=>{if(await confirmBox('Remove everything from your cart?','C
 
 C.checkout=async v=>{
   if(!cart.count())return location='cart.html';
-  const [vs,o]=await Promise.all([API.list('vendors'),store.get('draft',{type:'Dine-In',customer:SES()?.role==='customer'?SES().name:''})]);
-  if(!o.customer&&SES()?.role==='customer')o.customer=SES().name;
+  const [vs,o]=await Promise.all([API.list('vendors'),store.get('draft',{type:'Dine-In',customer:''})]);
   v.innerHTML=head('Checkout','Tell us how you want to receive your order.')+`
     <form id="cf" novalidate class="row g-4">
       <div class="col-lg-7">

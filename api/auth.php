@@ -1,24 +1,19 @@
-<?php /* GET: current user | POST ?action=login|register|logout */
+<?php /* GET: current staff user | POST ?action=login|logout (vendor & admin only) */
 require __DIR__ . '/../includes/bootstrap.php';
 $m = $_SERVER['REQUEST_METHOD']; $act = $_GET['action'] ?? '';
 if ($m === 'GET') respond(['user' => me()]);
 if ($m !== 'POST') fail('Method not allowed.', 405);
 if ($act === 'logout') { audit('logout'); $_SESSION = []; session_regenerate_id(true); $_SESSION['csrf'] = bin2hex(random_bytes(32)); respond(['csrf' => $_SESSION['csrf']]); }
 $b = body();
-if ($act === 'register') { // customers only; vendors use vendors.php?action=apply
-  $name = str($b, 'name', 2, 100); $em = email($b); $pw = password($b);
-  if (q('SELECT 1 FROM users WHERE email=?', [$em])->fetch()) fail('That email is already registered.', 409, ['email' => 'Already registered.']);
-  q("INSERT INTO users(name,email,password_hash,role,status) VALUES(?,?,?,'customer','active')", [$name, $em, password_hash($pw, PASSWORD_DEFAULT)]);
-  respond(null, 201);
-}
 if ($act === 'login') {
   $lock = $_SESSION['lock'] ?? ['n' => 0, 't' => 0];
   if ($lock['n'] >= 5 && time() - $lock['t'] < 60) fail('Too many attempts. Wait a minute and try again.', 429);
   $em = email($b);
-  $expectedRole = isset($b['role']) && $b['role'] !== '' ? one_of($b, 'role', ['customer', 'vendor', 'admin']) : null;
+  $expectedRole = isset($b['role']) && $b['role'] !== '' ? one_of($b, 'role', ['vendor', 'admin']) : null;
   $u = q('SELECT * FROM users WHERE email=?', [$em])->fetch();
   $ok = password_verify((string)($b['password'] ?? ''), $u['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuYVYKz5zKz5zKz5zKz5zKz5zKz5zKz5e'); // constant-ish time for unknown emails
   if (!$u || !$ok) { $_SESSION['lock'] = ['n' => $lock['n'] + 1, 't' => time()]; fail('Wrong email or password.', 401); }
+  if (!in_array($u['role'], ['vendor', 'admin'], true)) fail('Only vendor and admin accounts can sign in.', 403);
   if ($expectedRole && $u['role'] !== $expectedRole) {
     fail("This account cannot sign in on the $expectedRole portal. Please use the {$u['role']} login page.", 403);
   }

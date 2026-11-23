@@ -4,7 +4,7 @@ $admin = need_role('admin'); $m = $_SERVER['REQUEST_METHOD'];
 if ($m === 'GET') respond(q('SELECT id,name,email,role,status,ban_reason,banned_at,created_at FROM users ORDER BY id DESC')->fetchAll());
 if ($m === 'POST') { $b = body(); $em = email($b);
   if (q('SELECT 1 FROM users WHERE email=?', [$em])->fetch()) fail('Email already registered.', 409, ['email' => 'Already registered.']);
-  q('INSERT INTO users(name,email,password_hash,role,status) VALUES(?,?,?,?,?)', [str($b, 'name', 2, 100), $em, password_hash(password($b), PASSWORD_DEFAULT), one_of($b, 'role', ['customer', 'admin']), 'active']);
+  q('INSERT INTO users(name,email,password_hash,role,status) VALUES(?,?,?,?,?)', [str($b, 'name', 2, 100), $em, password_hash(password($b), PASSWORD_DEFAULT), one_of($b, 'role', ['admin']), 'active']);
   audit('user.create', $em); respond(['id' => (int)db()->lastInsertId()], 201); }
 $id = id();
 if ($m === 'PATCH') { $b = body(); $set = []; $p = [];

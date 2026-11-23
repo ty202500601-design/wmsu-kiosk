@@ -83,7 +83,7 @@ acts.addU=async()=>{
     <div class="mb-3"><label class="form-label">Full Name</label><input name="name" class="form-control" placeholder="Full name" minlength="2" required></div>
     <div class="mb-3"><label class="form-label">Email Address</label><input type="email" name="email" class="form-control" placeholder="email@wmsu.edu.ph" required></div>
     <div class="mb-3"><label class="form-label">Password</label><input type="password" name="password" class="form-control" placeholder="8+ characters, letters and numbers" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,72}" required></div>
-    <div class="mb-3"><label class="form-label">Account Role</label><select name="role" class="form-select"><option value="customer">Customer</option><option value="admin">Admin</option></select></div>
+    <div class="mb-3"><label class="form-label">Account Role</label><select name="role" class="form-select"><option value="admin">Admin</option></select></div>
   `,'Add user');
   if(r){await API.save('users',r);toast('User added','success');refresh()}
 };
