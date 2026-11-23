@@ -202,7 +202,7 @@ C.checkout=async v=>{
         </div>
         <div class="mb-3">
           <label class="form-label">Customer Name</label>
-          <input name="customer" class="form-control form-control-lg" placeholder="Enter your full name" value="${esc(o.customer)}" minlength="2" required>
+          <input name="customer" class="form-control form-control-lg" placeholder="Enter your full name" value="" autocomplete="off" minlength="2" required>
           <div class="invalid-feedback">Please enter your name.</div>
         </div>
       </div>
@@ -275,6 +275,7 @@ C.payment=async v=>{
     const o=await API.save('orders',{items:c.items,type:dr.type,customer:dr.customer,pay:d.pay});
     store.set('myOrders',[{no:o.no,token:o.token,code:o.code||''},...myOrders()]);
     store.set('lastOrder',{no:o.no,token:o.token,code:o.code||''});
+    localStorage.removeItem('draft');
     cart.clear();
     location='confirmation.html?no='+encodeURIComponent(o.no)+'&token='+encodeURIComponent(o.token);
   });
