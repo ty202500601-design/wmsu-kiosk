@@ -6,13 +6,28 @@ function with_items(array $rows, bool $public = false): array { if (!$rows) retu
   $ids = array_column($rows, 'id'); $ph = implode(',', array_fill(0, count($ids), '?'));
   $it = q("SELECT order_id,food_id,name,unit_price,qty,line_total FROM order_items WHERE order_id IN($ph)", $ids)->fetchAll(); $g = [];
   foreach ($it as $i) $g[$i['order_id']][] = $i;
-  foreach ($rows as &$r) { $r['items'] = $g[$r['id']] ?? []; if ($public) unset($r['user_id'], $r['track_code']); } return $rows; }
+  foreach ($rows as &$r) {
+    $r['items'] = $g[$r['id']] ?? [];
+    if (!is_track_released($r)) $r['track_code'] = null;
+    if ($public) unset($r['user_id'], $r['checkout_token']);
+  }
+  return $rows;
+}
 
 if ($m === 'GET') {
   if (isset($_GET['order_no'])) {
-    $target = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.track_code=?', [strtoupper(trim($_GET['order_no'])), strtoupper(trim($_GET['code'] ?? ''))])->fetch();
+    $ono = strtoupper(trim((string)$_GET['order_no']));
+    $key = strtoupper(trim((string)($_GET['token'] ?? $_GET['code'] ?? '')));
+    if ($key === 'NULL' || $key === 'UNDEFINED') $key = '';
+    if ($key === '' && !empty($_SESSION['checkout_tokens'][$ono])) $key = $_SESSION['checkout_tokens'][$ono];
+    if ($ono === '' || $key === '') fail('Order number and tracking/access code are required.', 422);
+    $target = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND ((o.track_code IS NOT NULL AND o.track_code=?) OR (o.checkout_token IS NOT NULL AND o.checkout_token=?))', [$ono, $key, $key])->fetch();
     if (!$target) fail('Order not found. Check the order number and tracking code.', 404);
-    $all = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
+    if (!empty($target['checkout_token'])) {
+      $all = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.checkout_token=? ORDER BY o.id ASC', [$target['checkout_token']])->fetchAll();
+    } else {
+      $all = q('SELECT o.*,v.name vendor_name,v.gcash_number,v.gcash_name,v.gcash_qr,v.maya_number,v.maya_name,p.reference payment_ref FROM orders o JOIN vendors v ON v.id=o.vendor_id LEFT JOIN payments p ON p.order_id=o.id WHERE o.track_code=? ORDER BY o.id ASC', [$target['track_code']])->fetchAll();
+    }
     foreach ($all as &$r) {
       if (in_array($r['order_status'], ['Pending Payment', 'Confirmed', 'Preparing'], true)) {
         $ahead = (int)q("SELECT COUNT(*) FROM orders WHERE vendor_id=? AND order_status IN ('Confirmed','Preparing') AND id<?", [$r['vendor_id'], $r['id']])->fetchColumn();
@@ -56,15 +71,15 @@ if ($m === 'POST') {
     $by_vendor[$f['vendor_id']]['vendor'] = $f;
     $by_vendor[$f['vendor_id']]['items'][] = $f;
   }
-  $code = strtoupper(bin2hex(random_bytes(3)));
+  $token = strtoupper(bin2hex(random_bytes(8)));
   $pdo = db(); $pdo->beginTransaction();
   $created = [];
   try {
     foreach ($by_vendor as $vid => $grp) {
       $cents = array_sum(array_column($grp['items'], 'line'));
       $vtotal = $cents / 100;
-      q('INSERT INTO orders(order_no,track_code,vendor_id,user_id,customer_name,order_type,payment_method,subtotal,total) VALUES(?,?,?,?,?,?,?,?,?)',
-        ['TMP' . bin2hex(random_bytes(8)), $code, $vid, $u['id'] ?? null, $name, $type, $method, $vtotal, $vtotal]);
+      q('INSERT INTO orders(order_no,track_code,checkout_token,vendor_id,user_id,customer_name,order_type,payment_method,subtotal,total) VALUES(?,NULL,?,?,?,?,?,?,?,?)',
+        ['TMP' . bin2hex(random_bytes(8)), $token, $vid, $u['id'] ?? null, $name, $type, $method, $vtotal, $vtotal]);
       $oid = (int)$pdo->lastInsertId();
       $no = 'WM' . date('ymd') . '-' . str_pad((string)$oid, 5, '0', STR_PAD_LEFT);
       q('UPDATE orders SET order_no=? WHERE id=?', [$no, $oid]);
@@ -81,12 +96,13 @@ if ($m === 'POST') {
       }
       q("INSERT INTO payments(order_id,method,amount,status) VALUES(?,?,?, 'Unpaid')", [$oid, $method, $vtotal]);
       notify((int)$grp['vendor']['vendor_user'], $oid, "New order $no ($type) - ₱" . number_format($vtotal, 2));
+      $_SESSION['checkout_tokens'][$no] = $token;
       $created[] = ['id' => $oid, 'order_no' => $no, 'vendor_id' => $vid, 'vendor_name' => $grp['vendor']['vendor_name'], 'total' => $vtotal];
     }
     $pdo->commit();
   } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
   $grand_total = array_sum(array_column($created, 'total'));
-  respond(['id' => $created[0]['id'], 'order_no' => $created[0]['order_no'], 'orders' => $created, 'track_code' => $code, 'total' => $grand_total, 'order_status' => 'Pending Payment', 'payment_status' => 'Unpaid'], 201);
+  respond(['id' => $created[0]['id'], 'order_no' => $created[0]['order_no'], 'orders' => $created, 'track_code' => null, 'checkout_token' => $token, 'total' => $grand_total, 'order_status' => 'Pending Payment', 'payment_status' => 'Unpaid'], 201);
 }
 if ($m === 'PATCH') {
   $u = need_role('customer', 'vendor'); $b = body(); $to = one_of($b, 'order_status', array_keys(FLOW)); $pdo = db(); $pdo->beginTransaction();
@@ -95,9 +111,16 @@ if ($m === 'PATCH') {
     if (!in_array($to, FLOW[$o['order_status']], true)) { $pdo->rollBack(); fail("An order that is \"{$o['order_status']}\" cannot move to \"$to\".", 409); }
     if ($u['role'] === 'customer' && !($to === 'Cancelled' && $o['order_status'] === 'Pending Payment' && $o['payment_status'] === 'Unpaid')) { $pdo->rollBack(); fail('You can only cancel an unpaid order that has not been confirmed.', 403); }
     if ($to === 'Cancelled' && $o['payment_status'] === 'Paid' && $u['role'] !== 'admin') { $pdo->rollBack(); fail('A paid order can only be cancelled by an admin, who handles the refund.', 403); }
+    if ($o['payment_method'] !== 'cash' && $to !== 'Cancelled' && $o['payment_status'] !== 'Paid') { $pdo->rollBack(); fail('Confirm payment before accepting or preparing an e-wallet order.', 409); }
     if ($to === 'Completed' && $o['payment_status'] !== 'Paid') { $pdo->rollBack(); fail('Confirm payment before completing this order.', 409); }
     $reason = $to === 'Cancelled' ? ($u['role'] === 'customer' ? 'Cancelled by customer' : str($b, 'cancel_reason', 3, 200)) : null;
-    q('UPDATE orders SET order_status=?,cancel_reason=? WHERE id=?', [$to, $reason, $o['id']]);
+    $tc = $o['track_code'];
+    if ($o['payment_method'] === 'cash' && $to !== 'Cancelled' && empty($tc)) {
+      $tc = generate_track_code();
+      q('UPDATE orders SET order_status=?,cancel_reason=?,track_code=? WHERE id=?', [$to, $reason, $tc, $o['id']]);
+    } else {
+      q('UPDATE orders SET order_status=?,cancel_reason=? WHERE id=?', [$to, $reason, $o['id']]);
+    }
     if ($to === 'Cancelled') { // give limited-stock servings back so cancelled orders don't permanently deplete inventory
       q('UPDATE foods f JOIN order_items oi ON oi.food_id=f.id SET f.stock_qty=f.stock_qty+oi.qty, f.is_available=1 WHERE oi.order_id=? AND f.stock_qty IS NOT NULL', [$o['id']]);
     }

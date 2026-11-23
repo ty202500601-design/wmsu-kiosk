@@ -50,3 +50,15 @@ function audit(string $a, string $d = ''): void { q('INSERT INTO activity_logs(u
 function notify(?int $uid, ?int $oid, string $m): void { if ($uid) q('INSERT INTO notifications(user_id,order_id,message) VALUES(?,?,?)', [$uid, $oid, $m]); }
 function settings_all(): array { return array_column(q('SELECT k,v FROM settings')->fetchAll(), 'v', 'k'); }
 function methods_enabled(): array { $s = settings_all(); return array_values(array_filter(['cash', 'gcash', 'maya'], fn($m) => ($s["pay_$m"] ?? '0') === '1')); }
+function is_track_released(array $o): bool {
+  if (empty($o['track_code'])) return false;
+  if (($o['payment_method'] ?? '') === 'cash') return !in_array($o['order_status'] ?? '', ['Pending Payment', 'Cancelled'], true);
+  return ($o['payment_status'] ?? '') === 'Paid';
+}
+function generate_track_code(): string {
+  for ($i = 0; $i < 10; $i++) {
+    $c = strtoupper(bin2hex(random_bytes(3)));
+    if (!q('SELECT 1 FROM orders WHERE track_code=?', [$c])->fetch()) return $c;
+  }
+  return strtoupper(bin2hex(random_bytes(3)));
+}

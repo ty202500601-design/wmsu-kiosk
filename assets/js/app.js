@@ -12,7 +12,7 @@ const STAFF=B.role==='vendor'||B.role==='admin';
 const ST_IN={'Pending Payment':'pending','Confirmed':'pending','Preparing':'preparing','Ready for Pickup':'ready','Completed':'completed','Cancelled':'rejected'};
 const when=t=>String(t||'').replace(' ','T');
 const pick=m=>Object.fromEntries(Object.entries(m).filter(([,v])=>v!==undefined));
-const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code,vendorId:+o.vendor_id,vendorName:o.vendor_name||'',gcashNumber:o.gcash_number||'',gcashName:o.gcash_name||'',gcashQr:o.gcash_qr?`${ROOT}uploads/qr/${o.gcash_qr}`:'',mayaNumber:o.maya_number||'',mayaName:o.maya_name||'',items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',cancelReason:o.cancel_reason||'',queueAhead:o.queue_ahead??null,estMinutes:o.est_minutes??null,time:when(o.created_at)});
+const mapOrder=o=>({id:+o.id,no:o.order_no,code:o.track_code||'',vendorId:+o.vendor_id,vendorName:o.vendor_name||'',gcashNumber:o.gcash_number||'',gcashName:o.gcash_name||'',gcashQr:o.gcash_qr?`${ROOT}uploads/qr/${o.gcash_qr}`:'',mayaNumber:o.maya_number||'',mayaName:o.maya_name||'',items:(o.items||[]).map(i=>({id:i.food_id,name:i.name,price:+i.unit_price,qty:+i.qty})),type:o.order_type,customer:o.customer_name,pay:o.payment_method,total:+o.total,status:ST_IN[o.order_status]||o.order_status,orderStatus:o.order_status,payStatus:o.payment_status,ref:o.payment_ref||o.reference||'',cancelReason:o.cancel_reason||'',queueAhead:o.queue_ahead??null,estMinutes:o.est_minutes??null,time:when(o.created_at)});
 let _csrf=null;
 const API={
   async csrf(){if(!_csrf)_csrf=(await this.f('csrf',{noCsrf:true})).csrf;return _csrf},
@@ -41,7 +41,7 @@ const API={
    case'users':return this.f('users');
    case'settings':{const s=await this.f('settings');return [{id:1,canteen:s.canteen_name,open:s.open_time,close:s.close_time,cash:s.pay_cash==='1',gcash:s.pay_gcash==='1',maya:s.pay_maya==='1',gcashNumber:s.gcash_number||'',gcashName:s.gcash_name||'',mayaNumber:s.maya_number||'',mayaName:s.maya_name||''}]}
    }throw new Error('Unknown resource: '+t)},
-  async order(no,code){const d=await this.f('orders',{q:{order_no:no,code}});const list=Array.isArray(d)?d:[d];return list.map(o=>mapOrder({...o,track_code:code}))},
+  async order(no,code){const d=await this.f('orders',{q:{order_no:no,code}});const list=Array.isArray(d)?d:[d];return list.map(o=>mapOrder(o))},
   async save(t,it){const id=it.id;
    switch(t){
    case'categories':{const b=pick({name:it.name,icon:it.icon});return id?this.f('categories',{m:'PATCH',q:{id},b}):this.f('categories',{m:'POST',b})}
@@ -55,7 +55,7 @@ const API={
    }throw new Error('Unknown resource: '+t)},
   async remove(t,id){if(!['categories','foods','users','vendors'].includes(t))throw new Error('Cannot delete '+t);return this.f(t,{m:'DELETE',q:{id}})},
   async place(it){const r=await this.f('orders',{m:'POST',b:{order_type:it.type,payment_method:it.pay,guest_name:it.customer,items:it.items.map(i=>({food_id:i.id,qty:i.qty}))}});
-   return {id:r.id,no:r.order_no,orders:r.orders||[],code:r.track_code,total:+r.total,pay:it.pay}},
+   return {id:r.id,no:r.order_no,orders:r.orders||[],code:r.track_code||null,token:r.checkout_token||'',total:+r.total,pay:it.pay}},
   async setStatus(id,s,reason){const o=await this.f('orders',{q:{id}}),patch=b=>this.f('orders',{m:'PATCH',q:{id},b});
    if(s==='preparing'){if(o.order_status==='Pending Payment')await patch({order_status:'Confirmed'});return patch({order_status:'Preparing'})}
    if(s==='ready')return patch({order_status:'Ready for Pickup'});
@@ -63,17 +63,18 @@ const API={
    if(s==='rejected')return patch({order_status:'Cancelled',cancel_reason:reason||'Declined by the vendor'});
    throw new Error('Unknown status: '+s)},
   pay(orderId,action){return this.f('payments',{m:'PATCH',q:{order_id:orderId},b:{action}})},
-  submitRef(no,code,reference){return this.f('payments',{m:'PATCH',b:{action:'submit_reference',order_no:no,code,reference}})},
+  submitRef(no,key,reference){return this.f('payments',{m:'PATCH',b:{action:'submit_reference',order_no:no,token:key,code:key,reference}})},
   upload(foodId,file){const fd=new FormData();fd.append('image',file);return this.f('foods',{m:'POST',q:{action:'image',id:foodId},b:fd,raw:true})},
   uploadBanner(vendorId,file){const fd=new FormData();fd.append('banner',file);return this.f('vendors',{m:'POST',q:{action:'banner',id:vendorId},b:fd,raw:true})},
   removeBanner(vendorId){return this.f('vendors',{m:'DELETE',q:{action:'banner',id:vendorId}})},
   uploadQr(vendorId,file){const fd=new FormData();fd.append('qr',file);return this.f('vendors',{m:'POST',q:{action:'qr',id:vendorId},b:fd,raw:true})},
   removeQr(vendorId){return this.f('vendors',{m:'DELETE',q:{action:'qr',id:vendorId}})},
   report(type,q={}){return this.f('reports',{q:{type,from:'2000-01-01',...q}})},
-  async login(role,email,password){let d;try{d=await this.f('auth',{m:'POST',q:{action:'login'},b:{email,password}})}catch(e){toast(e.message,'danger');return null}
+  async login(role,email,password){let d;try{d=await this.f('auth',{m:'POST',q:{action:'login'},b:{email,password,role}})}catch(e){toast(e.message,'danger');return null}
    _csrf=d.csrf;
-   if(d.user.role!==role){await this.f('auth',{m:'POST',q:{action:'logout'}}).catch(()=>{});_csrf=null;toast('This account cannot sign in here.','danger');return null}
-   const r={name:d.user.name};if(role==='vendor')r.vendorId=+(await this.f('vendors',{q:{me:1}})).id;return r}
+   if(d.user.role!==role){await this.f('auth',{m:'POST',q:{action:'logout'}}).catch(()=>{});_csrf=null;toast(`This account cannot sign in on the ${role} portal.`,'danger');return null}
+   const r={name:d.user.name,email:d.user.email};if(role==='vendor')r.vendorId=+(await this.f('vendors',{q:{me:1}})).id;return r},
+  register(name,email,password){return this.f('auth',{m:'POST',q:{action:'register'},b:{name,email,password}})}
 };
 
 /* ---- Cart (localStorage) ---- */
@@ -137,7 +138,7 @@ function onForm(sel,fn){const f=$(sel);f.addEventListener('submit',async e=>{e.p
  const b=f.querySelector('button:not([type=button])');b&&(b.disabled=true);try{await fn(Object.fromEntries(new FormData(f)))}catch(x){toast('Something went wrong: '+x.message,'danger')}b&&(b.disabled=false)})}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-act]');if(b&&acts[b.dataset.act]){try{await acts[b.dataset.act](b.dataset,b)}catch(x){if(b.type==='checkbox')b.checked=!b.checked;toast(x.message,'danger')}}});
 acts.copy=async d=>{try{await navigator.clipboard.writeText(d.v);toast('Copied to clipboard: '+d.v,'success')}catch{toast('Copy failed, please copy manually.','danger')}};
-acts.logout=async()=>{try{await API.f('auth',{m:'POST',q:{action:'logout'}})}catch{}sessionStorage.removeItem('wmsu_session');location='login.html'};
+acts.logout=async()=>{try{await API.f('auth',{m:'POST',q:{action:'logout'}})}catch{}sessionStorage.removeItem('wmsu_session');location=B.role==='customer'?'vendors.html':'login.html'};
 
 const payBtns=(id,method,ps,os,ref='',amt=0)=>{const b=[],add=(a,l,k,icon)=>b.push(`<button class="btn btn-sm btn-${k}" data-act="payA" data-id="${id}" data-a="${a}" data-ref="${esc(ref)}" data-amt="${peso(amt)}"><i class="bi bi-${icon}"></i> ${l}</button>`);
  if(os==='Cancelled'||B.role!=='vendor')return '';
@@ -155,8 +156,8 @@ const brand=(t)=>`<a class="brand" href="${ROOT}index.html"><img class="logo-img
 
 function shell(){const {role,page}=B,title=document.title.split(' |')[0];
  if(page==='login'){$('#shell').innerHTML='<main id="view" class="container"></main>';return}
- if(role==='customer'){const p=B.page,isV=['vendors','menu','food-details'].includes(p),a=n=>(n==='vendors.html'&&isV)||n===p+'.html'?'active':'';
-  $('#shell').innerHTML=`<header class="topbar"><div class="container-xl d-flex flex-wrap align-items-center justify-content-between gap-2 gap-md-3">${brand('Canteen Kiosk')}<div class="d-flex align-items-center gap-2 order-md-3"><a class="btn ${p==='cart'||p==='checkout'?'btn-wmsu':'btn-outline-wmsu'} btn-sm d-inline-flex align-items-center gap-2 px-3 py-2" href="cart.html"><i class="bi bi-cart3"></i><span class="d-none d-sm-inline">Cart</span><span class="badge ${p==='cart'||p==='checkout'?'bg-light text-dark':'bg-danger text-white'}" id="cartCount">0</span></a></div><nav class="nav order-3 order-md-2 w-100 w-md-auto ms-md-auto gap-1 pt-2 pt-md-0 border-top border-md-0">${NAV.customer.map(n=>`<a class="${a(n[0])}" href="${n[0]}"><i class="bi bi-${n[1]}"></i><span>${n[2]}</span></a>`).join('')}</nav></div></header><main id="view" class="container-xl py-4"></main><footer class="text-center text-muted small py-4 border-top mt-5"><div class="container">© Western Mindanao State University · Canteen Self-Service Kiosk</div></footer>`;updateCart();return}
+ if(role==='customer'){const p=B.page,isV=['vendors','menu','food-details'].includes(p),a=n=>(n==='vendors.html'&&isV)||n===p+'.html'?'active':'',cs=SES()?.role==='customer'?SES():null;
+  $('#shell').innerHTML=`<header class="topbar"><div class="container-xl d-flex flex-wrap align-items-center justify-content-between gap-2 gap-md-3">${brand('Canteen Kiosk')}<div class="d-flex align-items-center gap-2 order-md-3">${cs?`<span class="small text-muted d-none d-lg-inline"><i class="bi bi-person-circle text-wmsu me-1"></i>${esc(cs.name)}</span><button class="btn btn-light btn-sm" data-act="logout" title="Sign out"><i class="bi bi-box-arrow-right"></i></button>`:`<a class="btn btn-light btn-sm" href="${ROOT}login.html"><i class="bi bi-person-circle"></i><span class="d-none d-sm-inline"> Sign In</span></a>`}<a class="btn ${p==='cart'||p==='checkout'?'btn-wmsu':'btn-outline-wmsu'} btn-sm d-inline-flex align-items-center gap-2 px-3 py-2" href="cart.html"><i class="bi bi-cart3"></i><span class="d-none d-sm-inline">Cart</span><span class="badge ${p==='cart'||p==='checkout'?'bg-light text-dark':'bg-danger text-white'}" id="cartCount">0</span></a></div><nav class="nav order-3 order-md-2 w-100 w-md-auto ms-md-auto gap-1 pt-2 pt-md-0 border-top border-md-0">${NAV.customer.map(n=>`<a class="${a(n[0])}" href="${n[0]}"><i class="bi bi-${n[1]}"></i><span>${n[2]}</span></a>`).join('')}</nav></div></header><main id="view" class="container-xl py-4"></main><footer class="text-center text-muted small py-4 border-top mt-5"><div class="container">© Western Mindanao State University · Canteen Self-Service Kiosk</div></footer>`;updateCart();return}
  const s=SES();if(!s||s.role!==role){location='login.html';return}
  $('#shell').innerHTML=`<aside class="side no-print"><div class="side-header">${brand(role==='admin'?'Admin Portal':'Vendor Portal')}</div><hr class="side-divider d-none d-lg-block"><nav class="side-nav">${NAV[role].map(n=>`<a class="${n[0]===page||(page.includes('food')&&n[0]==='menu')?'active':''}" href="${n[0]}.html"><i class="bi bi-${n[1]}"></i> <span>${n[2]}</span></a>`).join('')}</nav></aside><div class="content"><div class="top2 no-print"><h5 class="mb-0 fw-bold">${title}</h5><div class="d-flex align-items-center gap-3"><span class="text-muted small d-none d-sm-inline"><i class="bi bi-person-circle text-wmsu me-1"></i> ${esc(s.name)}</span><button class="btn btn-outline-wmsu btn-sm" data-act="logout"><i class="bi bi-box-arrow-right me-1"></i> Logout</button></div></div><main id="view" class="p-4"></main></div>`}
 
@@ -167,6 +168,7 @@ document.addEventListener('DOMContentLoaded',()=>boot());
 
 /* ---- Shared pages ---- */
 function loginPage(role,v){
+ if(SES()?.role===role){location='dashboard.html';return}
  v.innerHTML=`<div class="login-card card p-4"><div class="text-center mb-3"><img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal"><h4 class="mt-3 fw-bold">${role==='admin'?'Admin':'Vendor'} Login</h4></div><form id="lf" novalidate><div class="mb-3"><label class="form-label">Email</label><input type="email" name="u" class="form-control" autocomplete="username" required><div class="invalid-feedback">Enter your email address.</div></div><div class="mb-3"><label class="form-label">Password</label><div class="pw-wrap"><input type="password" name="p" id="pwInput" class="form-control" minlength="8" autocomplete="current-password" required><button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" aria-pressed="false" title="Show password"><i class="bi bi-eye"></i></button></div><div class="invalid-feedback">Password must be at least 8 characters.</div></div><button class="btn btn-wmsu btn-lg w-100">Sign in</button></form><p class="small text-muted text-center mt-3 mb-1">Use the account issued by the canteen administrator.</p><div class="text-center mt-2"><a class="small text-wmsu" href="${ROOT}index.html">&larr; Back to home</a></div></div>`;
  const pwI=$('#pwInput'),pwT=$('#pwToggle');
  pwT.onclick=()=>{const show=pwI.type==='password';pwI.type=show?'text':'password';pwT.setAttribute('aria-pressed',show);pwT.setAttribute('aria-label',show?'Hide password':'Show password');pwT.title=show?'Hide password':'Show password';pwT.firstElementChild.className='bi bi-eye'+(show?'-slash':'');pwI.focus()};

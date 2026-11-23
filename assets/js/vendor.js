@@ -63,7 +63,7 @@ acts.tglSound=()=>{store.set('vendor_sound',!soundOn());if(soundOn())playChime()
 const soundBtn=()=>`<button class="btn btn-sm ${soundOn()?'btn-outline-wmsu':'btn-light'}" data-act="tglSound" title="Toggle new order sound alerts"><i class="bi bi-volume-${soundOn()?'up-fill':'mute'}"></i> Sound: ${soundOn()?'On':'Off'}</button>`;
 const poll=()=>{clearInterval(window._poll);window._poll=setInterval(()=>{if(!document.hidden&&!document.querySelector('.modal.show'))refresh()},20000)};
 const ocols=[
-  ['Order',o=>`<a href="order-details.html?id=${o.id}" class="fw-bold">#${o.no}</a>`],
+  ['Order',o=>`<a href="order-details.html?id=${o.id}" class="fw-bold">#${o.no}</a>${o.code?`<br><small class="badge-status badge-wmsu mt-1">Track: ${esc(o.code)}</small>`:`<br><small class="text-muted" style="font-size:.72rem">${o.pay==='cash'?'Awaiting acceptance':'Awaiting payment'}</small>`}`],
   ['Customer',o=>esc(o.customer)],
   ['Items',o=>o.items.map(i=>`${i.qty}× ${esc(i.name)}`).join(', ')],
   ['Type',o=>esc(o.type)],
@@ -137,7 +137,7 @@ V['order-details']=async v=>{
     <div class="card p-4" style="max-width:640px">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <h3 class="fw-bold mb-0">Order <span class="text-wmsu">#${o.no}</span></h3>
-        <div>${badge(o.status)}</div>
+        <div class="d-flex gap-1 align-items-center">${o.code?`<span class="badge-status badge-wmsu">Track: ${esc(o.code)}</span>`:''}${badge(o.status)}</div>
       </div>
       <p class="text-muted small mb-3">${fmt(o.time)} · ${esc(o.type)} · Customer: <b>${esc(o.customer)}</b> · ${PAYN[o.pay]||o.pay} ${badge(o.payStatus)}</p>
       ${o.ref?`<div class="alert alert-light border py-2 px-3 mb-3"><strong>Payment Reference:</strong> <code class="fs-6">${esc(o.ref)}</code></div>`:''}

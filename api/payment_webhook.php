@@ -8,9 +8,12 @@ $raw = file_get_contents('php://input');
 if (!hash_equals(hash_hmac('sha256', $raw, cfg('webhook_secret')), $_SERVER['HTTP_X_SIGNATURE'] ?? '')) fail('Bad signature.', 401);
 $b = json_decode($raw, true) ?: []; $ref = (string)($b['reference'] ?? ''); $ok = ($b['status'] ?? '') === 'paid';
 $pdo = db(); $pdo->beginTransaction();
-$p = q("SELECT p.*,o.order_no FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.reference=? AND p.status='Pending Verification' FOR UPDATE", [$ref])->fetch();
+$p = q("SELECT p.*,o.order_no,o.track_code FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.reference=? AND p.status='Pending Verification' FOR UPDATE", [$ref])->fetch();
 if (!$p) { $pdo->rollBack(); fail('No matching pending payment.', 404); }
 if ($ok && abs((float)$p['amount'] - (float)($b['amount'] ?? -1)) > 0.001) { $pdo->rollBack(); fail('Amount mismatch.', 422); }
 $s = $ok ? 'Paid' : 'Failed'; q('UPDATE payments SET status=?,verified_at=NOW() WHERE id=?', [$s, $p['id']]); q('UPDATE orders SET payment_status=? WHERE id=?', [$s, $p['order_id']]);
-if ($ok) q("UPDATE orders SET order_status='Confirmed' WHERE id=? AND order_status='Pending Payment'", [$p['order_id']]);
+if ($ok) {
+  $tc = !empty($p['track_code']) ? $p['track_code'] : generate_track_code();
+  q("UPDATE orders SET track_code=?,order_status=IF(order_status='Pending Payment','Confirmed',order_status) WHERE id=?", [$tc, $p['order_id']]);
+}
 audit('payment.webhook', "{$p['order_no']} -> $s"); $pdo->commit(); respond();

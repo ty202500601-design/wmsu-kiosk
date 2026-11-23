@@ -15,6 +15,53 @@ const bindSearch=(id,onChange)=>{const inp=$('#'+id),clr=$('#'+id+'Clear');let t
   document.onkeydown=e=>{if(e.key==='/'&&!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)&&!document.querySelector('.modal.show')){e.preventDefault();inp.focus()}};
   return ()=>{inp.value='';apply()}};
 
+C.login=async v=>{
+  if(SES()?.role==='customer'){location=`${ROOT}customer/vendors.html`;return}
+  let tab=qs.get('mode')==='register'?'register':'login';
+  const draw=()=>{
+    v.innerHTML=`
+      <div class="login-card card p-4">
+        <div class="text-center mb-3">
+          <img class="logo-img lg" src="${ROOT}assets/img/wmsu-logo.png" alt="WMSU seal">
+          <h4 class="mt-3 fw-bold">Customer ${tab==='login'?'Sign In':'Create Account'}</h4>
+          <p class="text-muted small mb-0">Order faster from campus canteen stalls.</p>
+        </div>
+        <div class="d-flex gap-2 mb-3">
+          <button type="button" class="btn btn-sm flex-fill ${tab==='login'?'btn-wmsu':'btn-light'}" id="tabLogin">Sign In</button>
+          <button type="button" class="btn btn-sm flex-fill ${tab==='register'?'btn-wmsu':'btn-light'}" id="tabReg">Create Account</button>
+        </div>
+        ${tab==='login'?`
+          <form id="clf" novalidate>
+            <div class="mb-3"><label class="form-label">Email</label><input type="email" name="u" class="form-control" autocomplete="username" required><div class="invalid-feedback">Enter your email address.</div></div>
+            <div class="mb-3"><label class="form-label">Password</label><div class="pw-wrap"><input type="password" name="p" id="cpw" class="form-control" minlength="8" autocomplete="current-password" required><button type="button" class="pw-toggle" id="cpwT" aria-label="Show password" aria-pressed="false"><i class="bi bi-eye"></i></button></div><div class="invalid-feedback">Password must be at least 8 characters.</div></div>
+            <button class="btn btn-wmsu btn-lg w-100">Sign In</button>
+          </form>
+        `:`
+          <form id="crf" novalidate>
+            <div class="mb-3"><label class="form-label">Full Name</label><input name="name" class="form-control" minlength="2" maxlength="100" placeholder="e.g. Juan Dela Cruz" required><div class="invalid-feedback">Enter your full name.</div></div>
+            <div class="mb-3"><label class="form-label">Email</label><input type="email" name="email" class="form-control" autocomplete="email" placeholder="student@wmsu.edu.ph" required><div class="invalid-feedback">Enter a valid email address.</div></div>
+            <div class="mb-3"><label class="form-label">Password</label><div class="pw-wrap"><input type="password" name="password" id="cpw" class="form-control" minlength="8" maxlength="72" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,72}" autocomplete="new-password" placeholder="8+ chars with letters and numbers" required><button type="button" class="pw-toggle" id="cpwT" aria-label="Show password" aria-pressed="false"><i class="bi bi-eye"></i></button></div><div class="invalid-feedback">8-72 characters with letters and numbers.</div></div>
+            <button class="btn btn-wmsu btn-lg w-100">Create Account</button>
+          </form>
+        `}
+        <div class="text-center mt-3 pt-3 border-top d-flex flex-column gap-1">
+          <a class="small text-wmsu fw-semibold" href="${ROOT}customer/vendors.html"><i class="bi bi-bag-heart me-1"></i>Continue as Guest / Browse Vendors</a>
+          <a class="small text-muted" href="${ROOT}index.html">&larr; Back to home</a>
+        </div>
+      </div>`;
+    $('#tabLogin').onclick=()=>{tab='login';draw()};
+    $('#tabReg').onclick=()=>{tab='register';draw()};
+    const pwI=$('#cpw'),pwT=$('#cpwT');
+    if(pwI&&pwT)pwT.onclick=()=>{const show=pwI.type==='password';pwI.type=show?'text':'password';pwT.setAttribute('aria-pressed',show);pwT.firstElementChild.className='bi bi-eye'+(show?'-slash':'');pwI.focus()};
+    if(tab==='login'){
+      onForm('#clf',async d=>{const r=await API.login('customer',d.u,d.p);if(!r)return;sessionStorage.setItem('wmsu_session',JSON.stringify({role:'customer',...r}));location=`${ROOT}customer/vendors.html`});
+    }else{
+      onForm('#crf',async d=>{await API.register(d.name,d.email,d.password);const r=await API.login('customer',d.email,d.password);if(r){sessionStorage.setItem('wmsu_session',JSON.stringify({role:'customer',...r}));toast('Account created!','success');location=`${ROOT}customer/vendors.html`}else{tab='login';draw()}});
+    }
+  };
+  draw();
+};
+
 C.vendors=async v=>{
   const vs=(await API.list('vendors')).filter(x=>x.status==='active');
   let q='',onlyOpen=false;
@@ -183,7 +230,8 @@ acts.cclear=async()=>{if(await confirmBox('Remove everything from your cart?','C
 
 C.checkout=async v=>{
   if(!cart.count())return location='cart.html';
-  const [vs,o]=await Promise.all([API.list('vendors'),store.get('draft',{type:'Dine-In',customer:''})]);
+  const [vs,o]=await Promise.all([API.list('vendors'),store.get('draft',{type:'Dine-In',customer:SES()?.role==='customer'?SES().name:''})]);
+  if(!o.customer&&SES()?.role==='customer')o.customer=SES().name;
   v.innerHTML=head('Checkout','Tell us how you want to receive your order.')+`
     <form id="cf" novalidate class="row g-4">
       <div class="col-lg-7">
@@ -273,24 +321,37 @@ C.payment=async v=>{
     if(!d.pay)return $('#perr').classList.remove('d-none');
     const c=cart.get(),dr=store.get('draft',{});
     const o=await API.save('orders',{items:c.items,type:dr.type,customer:dr.customer,pay:d.pay});
-    store.set('myOrders',[{no:o.no,code:o.code},...myOrders()]);
-    store.set('lastOrder',{no:o.no,code:o.code});
+    store.set('myOrders',[{no:o.no,token:o.token,code:o.code||''},...myOrders()]);
+    store.set('lastOrder',{no:o.no,token:o.token,code:o.code||''});
     cart.clear();
-    location='confirmation.html?no='+encodeURIComponent(o.no)+'&code='+encodeURIComponent(o.code);
+    location='confirmation.html?no='+encodeURIComponent(o.no)+'&token='+encodeURIComponent(o.token);
   });
 };
 
-const findCode=no=>myOrders().find(x=>x.no===no)?.code||'';
+const cleanK=s=>{const v=String(s||'').trim();return (!v||v.toLowerCase()==='null'||v.toLowerCase()==='undefined')?'':v.toUpperCase()};
+const findKey=no=>{const m=myOrders().find(x=>x.no===no);return m?(cleanK(m.token)||cleanK(m.code)):''};
+const findCode=no=>cleanK(myOrders().find(x=>x.no===no)?.code);
+const syncCodes=orders=>{
+  const first=orders.find(o=>o.code);
+  if(!first)return;
+  const mine=myOrders().map(m=>orders.some(o=>o.no===m.no)?{...m,code:orders.find(o=>o.no===m.no).code||m.code}:m);
+  store.set('myOrders',mine);
+  const last=store.get('lastOrder',null);
+  if(last&&orders.some(o=>o.no===last.no))store.set('lastOrder',{...last,code:first.code});
+};
 const getOrders=async()=>{
-  const no=(qs.get('no')||store.get('lastOrder',{}).no||'').toUpperCase();
-  const code=(qs.get('code')||findCode(no)).toUpperCase();
-  if(!no||!code)return null;
+  const no=cleanK(qs.get('no')||store.get('lastOrder',{}).no);
+  const key=cleanK(qs.get('token'))||cleanK(qs.get('code'))||findKey(no)||cleanK(store.get('lastOrder',{}).token)||cleanK(store.get('lastOrder',{}).code);
+  if(!no)return null;
   try{
-    const r=await API.order(no,code);
-    return Array.isArray(r)?r:[r];
+    const r=await API.order(no,key);
+    const list=Array.isArray(r)?r:[r];
+    syncCodes(list);
+    return list;
   }catch{return null}
 };
-const payNote=o=>o.pay==='cash'?(o.payStatus==='Paid'?'Payment received.':'Please pay at the stall counter(s) when called.'):o.payStatus==='Paid'?'Payment received.':o.payStatus==='Pending Verification'?'Reference received. Stall(s) will verify shortly.':'';
+const orderLink=(page,o)=>{const k=qs.get('token')||findKey(o.no)||o.code||'';return `${page}.html?no=${encodeURIComponent(o.no)}&${k.length>6?'token':'code'}=${encodeURIComponent(k)}`};
+const payNote=o=>o.pay==='cash'?(o.payStatus==='Paid'?'Payment received.':o.code?'Cash order accepted. Please pay at the stall counter when called.':'Awaiting vendor acceptance. Tracking number will be released once accepted.'):o.payStatus==='Paid'?'Payment verified & tracking released.':o.payStatus==='Pending Verification'?'Reference submitted. Awaiting vendor payment confirmation before tracking number is generated.':'Submit your payment reference below. Your tracking number will be generated once confirmed.';
 
 C.confirmation=async v=>{
   const [orders,settings]=await Promise.all([getOrders(),API.list('settings').then(a=>a[0]||{}).catch(()=>({}))]);
@@ -298,12 +359,13 @@ C.confirmation=async v=>{
   const primary=orders[0];
   const grandTotal=orders.reduce((sum,o)=>sum+o.total,0);
   const isEwallet=primary.pay!=='cash';
+  const accessKey=(qs.get('token')||qs.get('code')||findKey(primary.no)||primary.code||'').toUpperCase();
+  const released=orders.filter(o=>o.code);
   v.innerHTML=`
     <div class="text-center card p-4 p-md-5 mx-auto" style="max-width:680px">
-      <i class="bi bi-check-circle-fill text-success" style="font-size:4rem"></i>
-      <h3 class="fw-bold mt-2">Order Placed!</h3>
-      <p class="text-muted mb-1">Your Tracking Code</p>
-      <div class="order-no mb-2">${esc(primary.code)}</div>
+      <i class="bi bi-${released.length?'check-circle-fill text-success':'hourglass-split text-wmsu'}" style="font-size:4rem"></i>
+      <h3 class="fw-bold mt-2">${released.length?'Order Confirmed!':'Order Placed!'}</h3>
+      ${released.length?`<p class="text-muted mb-1">Released Tracking Code${released.length>1?'s':''}</p><div class="order-no mb-2">${released.map(o=>esc(o.code)).filter((x,i,a)=>a.indexOf(x)===i).join(' · ')}</div>`:`<div class="my-2"><span class="badge-status badge-pending fs-6 px-3 py-2"><i class="bi bi-lock me-1"></i> ${isEwallet?'Awaiting Payment Confirmation':'Awaiting Vendor Acceptance'}</span></div><p class="small text-muted mb-2">${isEwallet?'No tracking number has been generated yet. Once the vendor confirms your payment, your unique tracking code will be released.':'Your tracking number will be generated once the vendor accepts your cash order.'}</p>`}
       <p class="text-muted small mb-4">${esc(primary.type)} · ${PAYS[primary.pay]?.[1]||esc(primary.pay)} · Grand Total: <b class="text-wmsu">${peso(grandTotal)}</b></p>
 
       <div class="text-start mb-4">
@@ -318,6 +380,7 @@ C.confirmation=async v=>{
                 <div>
                   <span class="badge-status badge-neutral me-1">#${esc(o.no)}</span>
                   <strong class="fs-6"><i class="bi bi-shop text-wmsu me-1"></i>${esc(o.vendorName||'Stall')}</strong>
+                  ${o.code?`<span class="badge-status badge-wmsu ms-1">Track: ${esc(o.code)}</span>`:`<span class="badge-status badge-pending ms-1">${isEwallet?'Awaiting Payment Confirmation':'Awaiting Acceptance'}</span>`}
                 </div>
                 <div class="d-flex align-items-center gap-2">
                   ${badge(o.payStatus)}
@@ -339,7 +402,7 @@ C.confirmation=async v=>{
                     </div>
                     ${ewNum?`<button type="button" class="btn btn-sm btn-outline-wmsu" data-act="copy" data-v="${esc(ewNum)}"><i class="bi bi-clipboard"></i> Copy</button>`:''}
                   </div>
-                  <form class="rf-stall" data-no="${esc(o.no)}" data-code="${esc(primary.code)}" novalidate>
+                  <form class="rf-stall" data-no="${esc(o.no)}" data-code="${esc(accessKey)}" novalidate>
                     <label class="form-label small mb-1">Enter ${PAYS[o.pay]?.[1]||'e-wallet'} Reference No. for ${esc(o.vendorName||'this stall')}:</label>
                     <div class="input-group input-group-sm">
                       <input name="ref" class="form-control" pattern="[A-Za-z0-9\\-]{4,60}" minlength="4" maxlength="60" placeholder="e.g. 1234567890123" required>
@@ -348,16 +411,16 @@ C.confirmation=async v=>{
                     <div class="invalid-feedback">Letters, numbers and dashes only (4-60).</div>
                   </form>
                 </div>`:
-              isEwallet&&o.payStatus==='Pending Verification'?`<div class="small text-success fw-semibold mt-1"><i class="bi bi-check-circle me-1"></i> Reference submitted: <code>${esc(o.ref)}</code> · Waiting for ${esc(o.vendorName||'stall')} to verify.</div>`:
-              isEwallet&&o.payStatus==='Paid'?`<div class="small text-success fw-semibold mt-1"><i class="bi bi-patch-check-fill me-1"></i> Payment verified by ${esc(o.vendorName||'stall')}.</div>`:
+              isEwallet&&o.payStatus==='Pending Verification'?`<div class="small text-wmsu fw-semibold mt-1"><i class="bi bi-hourglass-split me-1"></i> Reference submitted: <code>${esc(o.ref)}</code> · Awaiting ${esc(o.vendorName||'stall')} payment confirmation before tracking is released.</div>`:
+              isEwallet&&o.payStatus==='Paid'?`<div class="small text-success fw-semibold mt-1"><i class="bi bi-patch-check-fill me-1"></i> Payment confirmed by ${esc(o.vendorName||'stall')}${o.code?` · Tracking Code: <b>${esc(o.code)}</b>`:''}</div>`:
               `<div class="small text-muted mt-1"><i class="bi bi-cash-coin me-1"></i> ${payNote(o)}</div>`}
             </div>`;
         }).join('')}
       </div>
 
       <div class="d-grid gap-2">
-        <a class="btn btn-wmsu btn-lg" href="tracking.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-geo-alt me-1"></i> Track Order Status</a>
-        <a class="btn btn-light" href="receipt.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-receipt me-1"></i> View Receipt</a>
+        <a class="btn btn-wmsu btn-lg" href="${orderLink('tracking',primary)}"><i class="bi bi-geo-alt me-1"></i> Track Order Status</a>
+        <a class="btn btn-light" href="${orderLink('receipt',primary)}"><i class="bi bi-receipt me-1"></i> View Receipt</a>
       </div>
       <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2 small text-muted" id="kioskBar">
         <span id="kioskTimer"></span>
@@ -396,7 +459,7 @@ C.receipt=async v=>{
     <div class="receipt card p-4">
       <div class="text-center"><b>WMSU CAMPUS CANTEEN</b><br><small class="text-muted">${fmt(primary.time)}</small></div>
       <hr>
-      <div>Tracking Code: <b>${esc(primary.code)}</b></div>
+      <div>Tracking Code: <b>${orders.some(o=>o.code)?orders.map(o=>o.code?esc(o.code):'Pending').filter((x,i,a)=>a.indexOf(x)===i).join(', '):'Awaiting Payment Confirmation'}</b></div>
       <div>Customer: <b>${esc(primary.customer)}</b></div>
       <div>Order Type: ${esc(primary.type)}</div>
       <hr>
@@ -427,10 +490,11 @@ C.tracking=async v=>{
   clearInterval(poll);
   const no0=(qs.get('no')||store.get('lastOrder',{}).no||'').toUpperCase();
   const code0=(qs.get('code')||findCode(no0)).toUpperCase();
-  v.innerHTML=head('Track my order','Enter your order number or 6-character tracking code.')+`
+  const tok0=(qs.get('token')||findKey(no0)||store.get('lastOrder',{}).token||'').toUpperCase();
+  v.innerHTML=head('Track my order','Enter your order number and 6-character tracking code (released after payment confirmation).')+`
     <form id="tf" class="row g-2 mb-4" style="max-width:700px" novalidate>
-      <div class="col-sm-5"><input name="no" class="form-control form-control-lg" placeholder="Order no. (e.g. 1001)" value="${esc(no0)}" required></div>
-      <div class="col-sm-4"><input name="code" class="form-control form-control-lg" placeholder="Tracking code" maxlength="6" value="${esc(code0)}" required></div>
+      <div class="col-sm-5"><input name="no" class="form-control form-control-lg" placeholder="Order no. (e.g. WM...)" value="${esc(no0)}" required></div>
+      <div class="col-sm-4"><input name="code" class="form-control form-control-lg" placeholder="Tracking code" maxlength="16" value="${esc(code0)}" required></div>
       <div class="col-sm-3"><button class="btn btn-wmsu btn-lg w-100">Track</button></div>
     </form>
     <div id="tr"></div>`;
@@ -440,28 +504,31 @@ C.tracking=async v=>{
       const r=await API.order(...cur);
       const orders=Array.isArray(r)?r:[r];
       if(!orders.length)return $('#tr').innerHTML=empty('search','No orders found.');
+      syncCodes(orders);
       const primary=orders[0];
       const needPay=primary.pay!=='cash'&&orders.some(o=>['Unpaid','Failed'].includes(o.payStatus)&&o.orderStatus!=='Cancelled');
+      const released=orders.filter(o=>o.code);
       $('#tr').innerHTML=`
-        ${needPay?`<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><i class="bi bi-exclamation-triangle-fill me-1"></i> <b>Payment reference required:</b> Please submit your ${PAYS[primary.pay]?.[1]||'e-wallet'} reference number so the stall can confirm your order.</div><a class="btn btn-sm btn-wmsu" href="confirmation.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}">Pay / Enter Reference</a></div>`:''}
+        ${needPay?`<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><i class="bi bi-exclamation-triangle-fill me-1"></i> <b>Payment reference required:</b> Please submit your ${PAYS[primary.pay]?.[1]||'e-wallet'} reference number so the stall can confirm your order.</div><a class="btn btn-sm btn-wmsu" href="${orderLink('confirmation',primary)}">Pay / Enter Reference</a></div>`:''}
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
           <div>
-            <h4 class="mb-0 fw-bold">Tracking: <span class="text-wmsu">${esc(primary.code)}</span></h4>
+            <h4 class="mb-0 fw-bold">${released.length?`Tracking: <span class="text-wmsu">${released.map(o=>esc(o.code)).filter((x,i,a)=>a.indexOf(x)===i).join(' · ')}</span>`:`<span class="badge-status badge-pending"><i class="bi bi-lock me-1"></i> ${primary.pay==='cash'?'Awaiting Vendor Acceptance':'Awaiting Payment Confirmation'}</span>`}</h4>
             <small class="text-muted">${orders.length} stall(s) in this order · Customer: ${esc(primary.customer)}</small>
           </div>
-          <a class="btn btn-light btn-sm" href="receipt.html?no=${encodeURIComponent(primary.no)}&code=${encodeURIComponent(primary.code)}"><i class="bi bi-receipt me-1"></i> View receipt</a>
+          <a class="btn btn-light btn-sm" href="${orderLink('receipt',primary)}"><i class="bi bi-receipt me-1"></i> View receipt</a>
         </div>
         ${orders.map(o=>`
           <div class="card p-4 mb-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
               <div>
                 <h5 class="fw-bold mb-0"><i class="bi bi-shop me-1"></i> ${esc(o.vendorName||'Stall')}</h5>
-                <small class="text-muted">Order <strong class="text-wmsu">#${esc(o.no)}</strong> · ${peso(o.total)}</small>
+                <small class="text-muted">Order <strong class="text-wmsu">#${esc(o.no)}</strong> · ${peso(o.total)}${o.code?` · Track: <strong class="text-wmsu">${esc(o.code)}</strong>`:''}</small>
               </div>
               <div class="d-flex gap-1 align-items-center">
                 ${badge(o.status)} ${o.pay==='cash'&&o.payStatus==='Unpaid'?'':badge(o.payStatus)}
               </div>
             </div>
+            ${!o.code&&o.status!=='rejected'?`<div class="alert alert-light border small py-2 mt-2 mb-0"><i class="bi bi-lock text-wmsu me-1"></i> <b>${o.pay==='cash'?'Awaiting Vendor Acceptance':'Awaiting Payment Confirmation'}:</b> Your tracking number will be generated and displayed here once the vendor ${o.pay==='cash'?'accepts your cash order':'confirms your payment'}.</div>`:''}
             <div class="stepper my-3">
               ${STEPS.map((s,i)=>`<div class="step ${i<=STEPS.findIndex(x=>x[0]===o.status)?'done':''}"><i class="bi bi-${s[1]}"></i>${s[2]}</div>`).join('')}
             </div>
@@ -472,19 +539,20 @@ C.tracking=async v=>{
   };
   const go=async()=>{clearInterval(poll);await show();poll=setInterval(show,5000)};
   onForm('#tf',async d=>{cur=[d.no.trim().toUpperCase(),d.code.trim().toUpperCase()];history.replaceState(0,'','?no='+encodeURIComponent(cur[0])+'&code='+encodeURIComponent(cur[1]));await go()});
-  if(no0&&code0){cur=[no0,code0];await go()};
+  if(no0&&(code0||tok0)){cur=[no0,code0||tok0];await go()};
 };
 
 C.history=async v=>{
   const mine=myOrders();
-  const results=await Promise.all(mine.map(m=>API.order(m.no,m.code).catch(()=>null)));
+  const results=await Promise.all(mine.map(m=>API.order(m.no,m.token||m.code).catch(()=>null)));
   const orders=results.flat().filter(Boolean);
+  syncCodes(orders);
   v.innerHTML=head('Order history','Orders placed from this browser.')+table([
-    ['Order',o=>`<b>#${esc(o.no)}</b><br><small class="text-muted"><i class="bi bi-shop"></i> ${esc(o.vendorName||'')}</small>`],
+    ['Order',o=>`<b>#${esc(o.no)}</b>${o.code?` <span class="badge-status badge-wmsu">${esc(o.code)}</span>`:''}<br><small class="text-muted"><i class="bi bi-shop"></i> ${esc(o.vendorName||'')}</small>`],
     ['Date',o=>fmt(o.time)],
     ['Items',o=>o.items.map(i=>`${i.qty}× ${esc(i.name)}`).join(', ')],
     ['Total',o=>`<b class="text-wmsu">${peso(o.total)}</b>`],
     ['Status',o=>badge(o.status)],
-    ['',o=>`<div class="d-flex gap-1 justify-content-end"><a class="btn btn-sm btn-light" href="tracking.html?no=${encodeURIComponent(o.no)}&code=${encodeURIComponent(o.code)}"><i class="bi bi-geo-alt"></i> Track</a> <a class="btn btn-sm btn-light" href="receipt.html?no=${encodeURIComponent(o.no)}&code=${encodeURIComponent(o.code)}"><i class="bi bi-receipt"></i> Receipt</a></div>`]
+    ['',o=>`<div class="d-flex gap-1 justify-content-end"><a class="btn btn-sm btn-light" href="${orderLink('tracking',o)}"><i class="bi bi-geo-alt"></i> Track</a> <a class="btn btn-sm btn-light" href="${orderLink('receipt',o)}"><i class="bi bi-receipt"></i> Receipt</a></div>`]
   ],orders,'You have not placed any orders yet.');
 };

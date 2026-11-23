@@ -14,9 +14,14 @@ if ($act === 'register') { // customers only; vendors use vendors.php?action=app
 if ($act === 'login') {
   $lock = $_SESSION['lock'] ?? ['n' => 0, 't' => 0];
   if ($lock['n'] >= 5 && time() - $lock['t'] < 60) fail('Too many attempts. Wait a minute and try again.', 429);
-  $em = email($b); $u = q('SELECT * FROM users WHERE email=?', [$em])->fetch();
+  $em = email($b);
+  $expectedRole = isset($b['role']) && $b['role'] !== '' ? one_of($b, 'role', ['customer', 'vendor', 'admin']) : null;
+  $u = q('SELECT * FROM users WHERE email=?', [$em])->fetch();
   $ok = password_verify((string)($b['password'] ?? ''), $u['password_hash'] ?? '$2y$10$abcdefghijklmnopqrstuuYVYKz5zKz5zKz5zKz5zKz5zKz5zKz5e'); // constant-ish time for unknown emails
   if (!$u || !$ok) { $_SESSION['lock'] = ['n' => $lock['n'] + 1, 't' => time()]; fail('Wrong email or password.', 401); }
+  if ($expectedRole && $u['role'] !== $expectedRole) {
+    fail("This account cannot sign in on the $expectedRole portal. Please use the {$u['role']} login page.", 403);
+  }
   if ($u['status'] === 'pending') fail('Your account is waiting for admin approval.', 403);
   if ($u['status'] === 'banned') fail('This account is disabled. Contact the canteen administrator.' . (!empty($u['ban_reason']) ? ' Reason: ' . $u['ban_reason'] : ''), 403);
   if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) q('UPDATE users SET password_hash=? WHERE id=?', [password_hash($b['password'], PASSWORD_DEFAULT), $u['id']]);

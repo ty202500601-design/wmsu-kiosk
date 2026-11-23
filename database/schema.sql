@@ -10,7 +10,7 @@ CREATE TABLE categories(id INT AUTO_INCREMENT PRIMARY KEY,vendor_id INT NULL,nam
 CREATE TABLE foods(id INT AUTO_INCREMENT PRIMARY KEY,vendor_id INT NOT NULL,category_id INT NULL,name VARCHAR(100) NOT NULL,description VARCHAR(255) NOT NULL DEFAULT '',
  price DECIMAL(10,2) NOT NULL CHECK(price>0),image VARCHAR(120) NULL,stock_qty INT NULL DEFAULT NULL,is_available TINYINT(1) NOT NULL DEFAULT 1,created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  INDEX(vendor_id,category_id),FOREIGN KEY(vendor_id) REFERENCES vendors(id) ON DELETE CASCADE,FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET NULL);
-CREATE TABLE orders(id INT AUTO_INCREMENT PRIMARY KEY,order_no VARCHAR(30) NOT NULL UNIQUE,track_code CHAR(6) NOT NULL,vendor_id INT NOT NULL,user_id INT NULL,customer_name VARCHAR(100) NOT NULL,
+CREATE TABLE orders(id INT AUTO_INCREMENT PRIMARY KEY,order_no VARCHAR(30) NOT NULL UNIQUE,track_code CHAR(6) NULL DEFAULT NULL,checkout_token CHAR(16) NULL DEFAULT NULL,vendor_id INT NOT NULL,user_id INT NULL,customer_name VARCHAR(100) NOT NULL,
  order_type ENUM('Dine-In','Take-Out') NOT NULL,
  order_status ENUM('Pending Payment','Confirmed','Preparing','Ready for Pickup','Completed','Cancelled') NOT NULL DEFAULT 'Pending Payment',
  payment_method VARCHAR(20) NOT NULL,

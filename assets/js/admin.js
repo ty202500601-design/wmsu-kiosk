@@ -50,7 +50,7 @@ A.dashboard=async v=>{
     </div>
     <h5 class="fw-bold mb-3">Recent Transactions</h5>
     ${table([
-      ['Order',o=>`<b>#${esc(o.no)}</b>`],
+      ['Order',o=>`<b>#${esc(o.no)}</b>${o.code?`<br><small class="text-wmsu fw-semibold">Track: ${esc(o.code)}</small>`:'<br><small class="text-muted">Pending</small>'}`],
       ['Vendor',o=>vname(vs,o.vendorId)],
       ['Method',o=>PN[o.pay]||esc(o.pay)],
       ['Amount',o=>`<strong class="text-wmsu">${peso(o.total)}</strong>`],
@@ -237,7 +237,7 @@ A.orders=async v=>{
       ${['all','pending','preparing','ready','completed','rejected'].map(s=>`<a class="pill text-decoration-none ${s===f?'active':''}" href="?s=${s}">${s[0].toUpperCase()+s.slice(1)}</a>`).join('')}
     </div>
     ${table([
-      ['Order',o=>`<b>#${esc(o.no)}</b>`],
+      ['Order',o=>`<b>#${esc(o.no)}</b>${o.code?`<br><small class="text-wmsu fw-semibold">Track: ${esc(o.code)}</small>`:'<br><small class="text-muted">Pending</small>'}`],
       ['Vendor',o=>vname(vs,o.vendorId)],
       ['Customer',o=>esc(o.customer)],
       ['Items',o=>o.items.reduce((s,i)=>s+i.qty,0)+' item(s)'],
