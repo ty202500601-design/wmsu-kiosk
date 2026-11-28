@@ -11,7 +11,7 @@ function user(PDO $p, string $name, string $email, string $pw, string $role, str
 }
 function vendor(PDO $p, int $uid, string $name, string $owner, string $desc, string $phone, string $status, int $open = 1): int {
   if ($r = one($p, 'SELECT id FROM vendors WHERE user_id=?', [$uid])) return (int)$r['id'];
-  run($p, 'INSERT INTO vendors(user_id,name,owner_name,description,phone,gcash_number,gcash_name,status,is_open) VALUES(?,?,?,?,?,?,?,?,?)', [$uid, $name, $owner, $desc, $phone, $phone, $name, $status, $open]); return (int)$p->lastInsertId();
+  run($p, 'INSERT INTO vendors(user_id,name,owner_name,description,phone,status,is_open) VALUES(?,?,?,?,?,?,?)', [$uid, $name, $owner, $desc, $phone, $status, $open]); return (int)$p->lastInsertId();
 }
 function cat(PDO $p, string $name, string $icon): int {
   if ($r = one($p, 'SELECT id FROM categories WHERE vendor_id IS NULL AND name=?', [$name])) return (int)$r['id'];
@@ -33,10 +33,14 @@ function order(PDO $p, int $vid, string $cust, string $type, string $ostatus, st
 $rice = cat($pdo, 'Rice Meals', '🍚'); $burg = cat($pdo, 'Burgers & Sandwiches', '🍔'); $snack = cat($pdo, 'Snacks', '🍟'); $drink = cat($pdo, 'Drinks', '🥤'); $dess = cat($pdo, 'Desserts', '🍨');
 
 user($pdo, 'WMSU Administrator', 'admin@wmsu.edu.ph', 'Admin1234', 'admin');
+user($pdo, 'Juan Dela Cruz', 'juan@wmsu.edu.ph', 'Student123', 'customer');
+user($pdo, 'Maria Santos', 'maria@wmsu.edu.ph', 'Student123', 'customer');
+user($pdo, 'Prof. Lopez', 'lopez@wmsu.edu.ph', 'Faculty123', 'customer');
 
 $v1 = vendor($pdo, user($pdo, 'Nena Reyes', 'nena@wmsu.edu.ph', 'Vendor123', 'vendor'), "Aling Nena's Kitchen", 'Nena Reyes', 'Filipino rice meals and silog', '09170000001', 'active');
 $v2 = vendor($pdo, user($pdo, 'Carlo Mendoza', 'burger@wmsu.edu.ph', 'Vendor123', 'vendor'), 'Burger Hub', 'Carlo Mendoza', 'Burgers, fries and drinks', '09170000002', 'active');
 $v3 = vendor($pdo, user($pdo, 'Ana Lim', 'sweet@wmsu.edu.ph', 'Vendor123', 'vendor'), 'Sweet Corner', 'Ana Lim', 'Snacks, halo-halo and desserts', '09170000003', 'active', 0);
+vendor($pdo, user($pdo, 'Rico Valdez', 'pizza@wmsu.edu.ph', 'Vendor123', 'vendor', 'pending'), 'Pizza Corner', 'Rico Valdez', 'Pizza by the slice', '09181112222', 'pending');
 
 $tap = food($pdo, $v1, $rice, 'Tapsilog', 'Beef tapa, garlic rice and egg.', 85); $ado = food($pdo, $v1, $rice, 'Chicken Adobo', 'Classic adobo with steamed rice.', 75);
 $sin = food($pdo, $v1, $rice, 'Pork Sinigang', 'Sour tamarind soup with pork.', 90); $tea = food($pdo, $v1, $drink, 'Iced Tea', 'Refreshing house iced tea.', 25);
@@ -51,4 +55,4 @@ if (!one($pdo, 'SELECT 1 FROM orders LIMIT 1')) {
   order($pdo, $v2, 'Pedro L.', 'Dine-In', 'Ready for Pickup', 'cash', 'Paid', [[$chz, 65, 2, 'Cheeseburger'], [$fry, 45, 1, 'French Fries']]);
   echo "Sample orders added.\n";
 }
-echo "Seed complete.\n\nTEST LOGINS\n  Admin   admin@wmsu.edu.ph   / Admin1234\n  Vendor  nena@wmsu.edu.ph    / Vendor123   (Aling Nena's Kitchen)\n  Vendor  burger@wmsu.edu.ph  / Vendor123   (Burger Hub)\n  Vendor  sweet@wmsu.edu.ph   / Vendor123   (Sweet Corner, closed)\n";
+echo "Seed complete.\n\nTEST LOGINS\n  Admin   admin@wmsu.edu.ph   / Admin1234\n  Vendor  nena@wmsu.edu.ph    / Vendor123   (Aling Nena's Kitchen)\n  Vendor  burger@wmsu.edu.ph  / Vendor123   (Burger Hub)\n  Vendor  sweet@wmsu.edu.ph   / Vendor123   (Sweet Corner, closed)\n  Pending vendor application: pizza@wmsu.edu.ph / Vendor123 (approve it in Admin > Applications)\n  Customers (juan@, maria@, lopez@wmsu.edu.ph) / Student123 or Faculty123\n";

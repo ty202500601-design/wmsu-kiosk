@@ -1,7 +1,7 @@
 <?php /* GET public settings | PATCH (admin) */
 require __DIR__ . '/../includes/bootstrap.php';
 $allowed = ['canteen_name', 'open_time', 'close_time', 'pay_cash', 'pay_gcash'];
-if ($_SERVER['REQUEST_METHOD'] === 'GET') respond(settings_all());
+if ($_SERVER['REQUEST_METHOD'] === 'GET') respond_cached(settings_all(), 30, 120);
 if ($_SERVER['REQUEST_METHOD'] !== 'PATCH') fail('Method not allowed.', 405);
 need_role('admin'); $b = body();
 foreach ($b as $k => $v) {

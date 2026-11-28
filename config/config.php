@@ -11,7 +11,6 @@ return [
   'webhook_secret' => getenv('PAY_WEBHOOK_SECRET') ?: 'wmsu_local_gcash_webhook_secret',
   'paymongo_secret' => getenv('PAYMONGO_SECRET_KEY') ?: '',
   'paymongo_webhook_secret' => getenv('PAYMONGO_WEBHOOK_SECRET') ?: '',
-  'gcash_expire_minutes' => 15,
   'allowed_origin' => '',             // set only if the frontend is on another origin, e.g. http://localhost:3000
   'upload_max' => 2 * 1024 * 1024,
 ];

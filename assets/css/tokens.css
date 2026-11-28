@@ -1,0 +1,93 @@
+/* Design Tokens — Fonts loaded via <link rel="preconnect"> + <link rel="stylesheet"> with display=swap in <head> */
+:root {
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-head: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Type Scale */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.85rem;
+  --fs-base: 0.95rem;
+  --fs-md: 1.0625rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: clamp(1.65rem, 2.5vw, 2.15rem);
+  --fs-display: clamp(2.15rem, 4.2vw, 3.35rem);
+
+  /* Brand Colors — WMSU Maroon + Warm Coral-Amber Accent */
+  --red: #8a1c2b;
+  --red-d: #68111e;
+  --red-l: #f9ecee;
+  --red-border: #edd0d4;
+
+  --accent: #d96b27;
+  --accent-d: #b85318;
+  --accent-l: #fef1e6;
+  --accent-ink: #8c3d0c;
+
+  --gold: #b8861b;
+  --gold-l: #fef6e4;
+
+  /* Surfaces & Warm Cream Grounds */
+  --bg: #f8fafc;
+  --bg-cream: #fbf6f0;
+  --bg-cream-2: #f3ebe0;
+  --card-bg: #ffffff;
+  --surface-warm: #fffdf9;
+  --surface-dark: #241517;
+  --surface-dark-2: #331d20;
+
+  /* Text & Borders (WCAG AA >= 4.5:1 on white & #FBF6F0) */
+  --ink: #1f1a1c;
+  --ink-light: #43393c;
+  --mut: #66585c;
+  --line: #e6dcd1;
+  --line-light: #f2ebe3;
+  --line-strong: #d4c5b6;
+
+  /* Semantic Status Colors (Zero Violet) */
+  --ok-bg: #ecfdf5;
+  --ok-ink: #065f46;
+  --ok-line: #a7f3d0;
+  --ready-bg: #e6f7f5;
+  --ready-ink: #0f6259;
+  --ready-line: #99e2d8;
+  --warn-bg: #fffbeb;
+  --warn-ink: #92400e;
+  --warn-line: #fde68a;
+  --err-bg: #fef2f2;
+  --err-ink: #991b1b;
+  --err-line: #fecaca;
+
+  /* Radii (16–24px card system) */
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r: 16px;
+  --r-lg: 20px;
+  --r-xl: 24px;
+  --r-pill: 9999px;
+
+  /* Soft Warm Shadows */
+  --shadow-sm: 0 1px 3px rgba(36, 21, 23, 0.05);
+  --shadow: 0 2px 8px rgba(36, 21, 23, 0.05), 0 8px 20px rgba(36, 21, 23, 0.04);
+  --shadow-md: 0 6px 18px rgba(36, 21, 23, 0.08), 0 2px 6px rgba(36, 21, 23, 0.04);
+  --shadow-lg: 0 16px 36px rgba(36, 21, 23, 0.12), 0 4px 10px rgba(36, 21, 23, 0.05);
+
+  /* Spacing Scale */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.25rem;
+  --sp-6: 1.5rem;
+  --sp-8: 2rem;
+  --sp-10: 2.5rem;
+  --sp-12: 3.25rem;
+
+  /* Motion & Layout */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur: 0.18s;
+  --tap-min: 48px;
+  --header-offset: 92px;
+}

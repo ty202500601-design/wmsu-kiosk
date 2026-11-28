@@ -2,7 +2,7 @@
 require __DIR__ . '/../includes/bootstrap.php';
 $m = $_SERVER['REQUEST_METHOD'];
 if ($m === 'GET') { $vid = isset($_GET['vendor_id']) ? id('vendor_id') : null;
-  respond($vid ? q('SELECT id,vendor_id,name,icon FROM categories WHERE vendor_id IS NULL OR vendor_id=? ORDER BY name', [$vid])->fetchAll() : q('SELECT id,vendor_id,name,icon FROM categories ORDER BY name')->fetchAll()); }
+  respond_cached($vid ? q('SELECT id,vendor_id,name,icon FROM categories WHERE vendor_id IS NULL OR vendor_id=? ORDER BY name', [$vid])->fetchAll() : q('SELECT id,vendor_id,name,icon FROM categories ORDER BY name')->fetchAll(), 15, 60); }
 $u = need_role('vendor', 'admin'); $own = $u['role'] === 'vendor' ? my_vendor_id($u) : null; $b = body();
 if ($m === 'POST') { $vid = $own ?? (isset($b['vendor_id']) && $b['vendor_id'] !== null ? (int)$b['vendor_id'] : null); // admin: null = global
   q('INSERT INTO categories(vendor_id,name,icon) VALUES(?,?,?)', [$vid, str($b, 'name', 2, 60), str($b, 'icon', 0, 8, false) ?? '']); audit('category.create', $b['name']); respond(['id' => (int)db()->lastInsertId()], 201); }

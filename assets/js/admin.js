@@ -102,10 +102,7 @@ A.vendors = async v => {
     ['Stall', x => `${x.emoji} <b>${esc(x.name)}</b>`],
     ['Owner / Email', x => `${esc(x.owner)}<br><small class="text-muted">${esc(x.email)}</small>`],
     ['Phone', x => esc(x.phone)],
-    ['E-Wallet', x => {
-      const hasG = !!String(x.gcashNumber || '').trim();
-      return hasG ? '<span class="badge-status badge-success">GCash Registered</span>' : '<span class="badge-status badge-neutral">Not Registered</span>';
-    }],
+    ['E-Wallet', x => gcashBadgeHtml(x.hasGcash)],
     ['Status', x => badge(x.status)],
     ['', x => `<div class="d-flex gap-1 justify-content-end"><button class="btn btn-sm btn-light" data-act="viewV" data-id="${x.id}"><i class="bi bi-eye"></i> Details</button> ${tgl('vendors', x.id, x.status, 'active', 'suspended')} ${del('vendors', x.id)}</div>`]
   ], vs)}`;
@@ -113,7 +110,7 @@ A.vendors = async v => {
 acts.viewV = async d => {
   const x = (await API.list('vendors')).find(v => v.id === +d.id);
   if (!x) return toast('Vendor not found.', 'danger');
-  const hasG = !!String(x.gcashNumber || '').trim(), hasM = !!String(x.mayaNumber || '').trim();
+  const hasG = !!x.hasGcash;
   const el = document.createElement('div'); el.className = 'modal fade';
   el.innerHTML = `<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-shop text-wmsu me-1"></i> ${esc(x.name)}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
     <div class="row g-3 mb-3 small">
@@ -121,10 +118,10 @@ acts.viewV = async d => {
       <div class="col-sm-6"><b>Status:</b> ${badge(x.status)} ${badge(x.open ? 'Open now' : 'Closed')}<br><div class="mt-1 text-muted">${esc(x.desc || 'No description.')}</div></div>
     </div>
     <div class="card bg-light p-3 mb-3">
-      <h6 class="fw-bold mb-2"><i class="bi bi-wallet2 text-wmsu me-1"></i> GCash Registration Status</h6>
+      <h6 class="fw-bold mb-2"><i class="bi bi-qr-code-scan text-wmsu me-1"></i> GCash QR Status</h6>
       <div class="p-2 bg-white rounded border small">
-        <div class="d-flex justify-content-between align-items-center mb-1"><b>GCash</b> ${hasG ? '<span class="badge-status badge-success">Registered</span>' : '<span class="badge-status badge-neutral">Not Registered</span>'}</div>
-        ${hasG ? `<div>${esc(x.gcashNumber)}</div><div class="text-muted">${esc(x.gcashName || '-')}</div>` : '<div class="text-muted">GCash is unavailable for this vendor at checkout.</div>'}
+        <div class="d-flex justify-content-between align-items-center mb-1"><b>GCash QR</b> ${gcashBadgeHtml(hasG)}</div>
+        ${hasG ? `<div class="text-muted">Account Name: <b>${esc(x.gcashAccountName || '-')}</b></div>` : '<div class="text-muted">Cash at Counter only.</div>'}
       </div>
     </div>
     <div class="card bg-light p-3">
@@ -206,7 +203,7 @@ A.foods = async v => {
       <p class="text-muted small mb-0">Read-only inspection of menu items across all registered stalls.</p>
     </div>
     ${table([
-    ['Item', f => `${f.emoji} <b>${esc(f.name)}</b>`],
+    ['Item', f => `<div class="d-flex align-items-center gap-2">${dishThumbHtml(f)}<b>${esc(f.name)}</b></div>`],
     ['Vendor', f => vname(vs, f.vendorId)],
     ['Category', f => esc(cs.find(c => c.id === f.catId)?.name || '-')],
     ['Price', f => peso(f.price)],
