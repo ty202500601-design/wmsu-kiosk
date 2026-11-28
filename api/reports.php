@@ -10,8 +10,7 @@ if ($type === 'activity') { need_role('admin'); respond(q('SELECT a.id,a.action,
 if ($type === 'dashboard') { $r = ['orders_by_status' => array_column(q("SELECT order_status s,COUNT(*) c FROM orders o WHERE $w GROUP BY order_status", $p)->fetchAll(), 'c', 's'),
     'total_sales' => (float)q("SELECT COALESCE(SUM(total),0) FROM orders o WHERE $w AND $paid", $p)->fetchColumn(),
     'recent_orders' => q("SELECT o.id,o.order_no,o.customer_name,o.total,o.order_status,o.payment_status,o.created_at FROM orders o WHERE $w ORDER BY o.id DESC LIMIT 8", $p)->fetchAll()];
-  if ($u['role'] === 'admin') { $r['total_users'] = (int)q('SELECT COUNT(*) FROM users')->fetchColumn(); $r['total_vendors'] = (int)q("SELECT COUNT(*) FROM vendors WHERE status='active'")->fetchColumn();
-    $r['pending_applications'] = (int)q("SELECT COUNT(*) FROM vendors WHERE status='pending'")->fetchColumn(); }
+  if ($u['role'] === 'admin') { $r['total_users'] = (int)q('SELECT COUNT(*) FROM users')->fetchColumn(); $r['total_vendors'] = (int)q("SELECT COUNT(*) FROM vendors WHERE status='active'")->fetchColumn(); }
   respond($r); }
 $r = ['from' => $from, 'to' => $to, 'totals' => q("SELECT COUNT(*) orders,COALESCE(SUM(total),0) sales FROM orders o WHERE $w AND $paid", $p)->fetch(),
   'by_day' => q("SELECT DATE(o.created_at) day,COUNT(*) orders,SUM(total) sales FROM orders o WHERE $w AND $paid GROUP BY day ORDER BY day", $p)->fetchAll(),

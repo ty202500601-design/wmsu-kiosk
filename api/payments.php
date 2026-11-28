@@ -1,50 +1,25 @@
-<?php /* GET (vendor own / admin all) | PATCH ?order_id= {action}. Payment status is NEVER set from the customer's choice of method. */
+<?php /* GET (vendor own / admin all) | PATCH ?order_id= {action:'confirm_cash'} (vendor cash only; GCash is verified via webhook). */
 require __DIR__ . '/../includes/bootstrap.php';
 $m = $_SERVER['REQUEST_METHOD'];
-if ($m === 'GET') { $u = need_role('vendor', 'admin'); $w = '1=1'; $p = []; if ($u['role'] === 'vendor') { $w = 'o.vendor_id=?'; $p[] = my_vendor_id($u); }
-  respond(q("SELECT p.id,o.id order_id,o.order_no,o.vendor_id,p.method,p.amount,p.status,p.reference,p.verified_at,o.order_status FROM payments p JOIN orders o ON o.id=p.order_id WHERE $w ORDER BY p.id DESC LIMIT 300", $p)->fetchAll()); }
-if ($m !== 'PATCH') fail('Method not allowed.', 405);
-$b = body(); $act = one_of($b, 'action', ['submit_reference', 'confirm_cash', 'verify', 'fail', 'refund']);
-function set_pay(array $o, string $s, ?int $by): ?string {
-  $tc = $o['track_code'] ?? null;
-  q('UPDATE orders SET payment_status=? WHERE id=?', [$s, $o['id']]);
-  if ($s === 'Paid') {
-    if (empty($tc)) {
-      $tc = generate_track_code();
-      q('UPDATE orders SET track_code=? WHERE id=?', [$tc, $o['id']]);
-    }
-    q("UPDATE orders SET order_status='Confirmed' WHERE id=? AND order_status='Pending Payment'", [$o['id']]);
-  }
-  q('UPDATE payments SET status=?,verified_by=?,verified_at=IF(?="Paid" OR ?="Refunded",NOW(),verified_at) WHERE order_id=?', [$s, $by, $s, $s, $o['id']]);
-  return is_track_released(['track_code' => $tc, 'payment_method' => $o['payment_method'], 'payment_status' => $s, 'order_status' => $s === 'Paid' && $o['order_status'] === 'Pending Payment' ? 'Confirmed' : $o['order_status']]) ? $tc : null;
+if ($m === 'GET') {
+  $u = need_role('vendor', 'admin'); $w = '1=1'; $p = [];
+  if ($u['role'] === 'vendor') { $w = 'o.vendor_id=?'; $p[] = my_vendor_id($u); }
+  respond(q("SELECT p.id,o.id order_id,o.order_no,o.vendor_id,p.method,p.provider,p.checkout_id,p.amount,p.status,p.reference,p.verified_at,o.order_status FROM payments p JOIN orders o ON o.id=p.order_id WHERE $w ORDER BY p.id DESC LIMIT 300", $p)->fetchAll());
 }
+if ($m !== 'PATCH') fail('Method not allowed.', 405);
+$b = body(); $act = one_of($b, 'action', ['confirm_cash']);
+$u = need_role('vendor');
 $pdo = db(); $pdo->beginTransaction();
 try {
-  if ($act === 'submit_reference') { // customer proves ownership with order_no + checkout_token (or track_code), then submits the e-wallet reference
-    $ono = strtoupper(trim((string)($b['order_no'] ?? '')));
-    $key = strtoupper(trim((string)($b['token'] ?? $b['code'] ?? '')));
-    if ($key === 'NULL' || $key === 'UNDEFINED') $key = '';
-    if ($key === '' && !empty($_SESSION['checkout_tokens'][$ono])) $key = $_SESSION['checkout_tokens'][$ono];
-    $o = q('SELECT * FROM orders WHERE order_no=? AND ((track_code IS NOT NULL AND track_code=?) OR (checkout_token IS NOT NULL AND checkout_token=?)) FOR UPDATE', [$ono, $key, $key])->fetch();
-    if (!$o) { $pdo->rollBack(); fail('Order not found.', 404); }
-    if ($o['payment_method'] === 'cash' || !in_array($o['payment_status'], ['Unpaid', 'Failed'], true) || $o['order_status'] === 'Cancelled') { $pdo->rollBack(); fail('A payment reference cannot be submitted for this order.', 409); }
-    $ref = str($b, 'reference', 4, 60); if (!preg_match('/^[A-Za-z0-9\-]+$/', $ref)) { $pdo->rollBack(); fail('Reference may only contain letters, numbers and dashes.', 422, ['reference' => 'Invalid format.']); }
-    if (q("SELECT 1 FROM payments p JOIN orders o ON o.id=p.order_id WHERE p.reference=? AND o.id!=? AND p.status IN ('Pending Verification','Paid') AND o.order_status!='Cancelled'", [$ref, $o['id']])->fetch()) {
-      $pdo->rollBack(); fail('This reference number has already been used for another order.', 409, ['reference' => 'Duplicate reference number.']);
-    }
-    q('UPDATE payments SET reference=? WHERE order_id=?', [$ref, $o['id']]);
-    set_pay($o, 'Pending Verification', null);
-    $vuser = q('SELECT user_id FROM vendors WHERE id=?', [$o['vendor_id']])->fetchColumn();
-    notify($vuser ? (int)$vuser : null, (int)$o['id'], "Payment ref $ref submitted for {$o['order_no']}");
-    $pdo->commit(); respond(['payment_status' => 'Pending Verification']);
-  }
-  $u = need_role('vendor'); $o = q('SELECT * FROM orders WHERE id=? FOR UPDATE', [id('order_id')])->fetch();
+  $o = q('SELECT * FROM orders WHERE id=? FOR UPDATE', [id('order_id')])->fetch();
   if (!$o || (int)$o['vendor_id'] !== my_vendor_id($u)) { $pdo->rollBack(); fail('Order not found.', 404); }
-  $ps = $o['payment_status']; $cash = $o['payment_method'] === 'cash'; $new = null;
-  if ($act === 'confirm_cash' && $cash && $ps === 'Unpaid' && $o['order_status'] !== 'Cancelled') $new = 'Paid';
-  elseif ($act === 'verify' && !$cash && $ps === 'Pending Verification') $new = 'Paid';   // manual check against the provider's dashboard; prefer the webhook
-  elseif ($act === 'fail' && !$cash && in_array($ps, ['Unpaid', 'Pending Verification'], true)) $new = 'Failed';
-  if (!$new) { $pdo->rollBack(); fail("Action \"$act\" is not allowed for a $ps " . $o['payment_method'] . ' payment.', 409); }
-  $tc = set_pay($o, $new, $u['id']); notify($o['user_id'] ? (int)$o['user_id'] : null, (int)$o['id'], "Payment for {$o['order_no']}: $new" . ($tc ? " (Track: $tc)" : ''));
-  audit("payment.$act", "{$o['order_no']} -> $new" . ($tc ? " track=$tc" : '')); $pdo->commit(); respond(['payment_status' => $new, 'track_code' => $tc]);
+  if ($o['payment_method'] !== 'cash' || $o['payment_status'] !== 'Unpaid' || $o['order_status'] === 'Cancelled') {
+    $pdo->rollBack(); fail('Action "confirm_cash" is only allowed for unpaid Cash orders.', 409);
+  }
+  $tc = $o['track_code'] ?: generate_track_code();
+  q("UPDATE orders SET payment_status='Paid',track_code=?,order_status=IF(order_status='Pending Payment','Confirmed',order_status) WHERE id=?", [$tc, $o['id']]);
+  q("UPDATE payments SET status='Paid',verified_by=?,verified_at=NOW() WHERE order_id=?", [$u['id'], $o['id']]);
+  audit('payment.confirm_cash', "{$o['order_no']} -> Paid track=$tc");
+  $pdo->commit();
+  respond(['payment_status' => 'Paid', 'track_code' => $tc]);
 } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }

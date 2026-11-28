@@ -9,7 +9,7 @@ if (cfg('allowed_origin')) { header('Access-Control-Allow-Origin: ' . cfg('allow
   header('Access-Control-Allow-Headers: Content-Type, X-CSRF-Token'); header('Access-Control-Allow-Methods: GET,POST,PATCH,DELETE');
   if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; } }
 
-function cfg(string $k) { return $GLOBALS['cfg'][$k]; }
+function cfg(string $k) { return $GLOBALS['cfg'][$k] ?? null; }
 function respond($data = null, int $code = 200): never { http_response_code($code); echo json_encode(['success' => true, 'data' => $data], JSON_UNESCAPED_UNICODE); exit; }
 function fail(string $msg, int $code = 400, array $errors = []): never { http_response_code($code); echo json_encode(['success' => false, 'error' => $msg, 'errors' => (object)$errors], JSON_UNESCAPED_UNICODE); exit; }
 set_exception_handler(function (Throwable $e) {
@@ -61,4 +61,33 @@ function generate_track_code(): string {
     if (!q('SELECT 1 FROM orders WHERE track_code=?', [$c])->fetch()) return $c;
   }
   return strtoupper(bin2hex(random_bytes(3)));
+}
+function save_resized_image(?array $file, string $destDir, int $maxW = 800): string {
+  if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) fail('Choose an image to upload.', 422);
+  if ($file['size'] > cfg('upload_max')) fail('Image must be 2 MB or smaller.', 422);
+  $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+  $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'][$mime] ?? null;
+  $dim = @getimagesize($file['tmp_name']);
+  if (!$ext || !$dim || $dim[0] < 40 || $dim[1] < 40) fail('Only valid JPG, PNG or WebP images (at least 40x40px) are allowed.', 422);
+  if (function_exists('imagewebp') && function_exists('imagecreatefromstring')) {
+    $src = @imagecreatefromstring((string)file_get_contents($file['tmp_name']));
+    if ($src) {
+      $w = imagesx($src); $h = imagesy($src);
+      if ($w > $maxW) {
+        $nw = $maxW; $nh = max(1, (int)round($h * ($maxW / $w)));
+        $dst = imagecreatetruecolor($nw, $nh);
+        imagealphablending($dst, false); imagesavealpha($dst, true);
+        imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+        imagedestroy($src); $src = $dst;
+      } else {
+        imagepalettetotruecolor($src); imagesavealpha($src, true);
+      }
+      $name = bin2hex(random_bytes(12)) . '.webp';
+      if (@imagewebp($src, rtrim($destDir, '/\\') . '/' . $name, 82)) { imagedestroy($src); return $name; }
+      imagedestroy($src);
+    }
+  }
+  $name = bin2hex(random_bytes(12)) . ".$ext";
+  if (!move_uploaded_file($file['tmp_name'], rtrim($destDir, '/\\') . '/' . $name)) fail('Could not save the image.', 500);
+  return $name;
 }

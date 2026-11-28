@@ -15,12 +15,8 @@ if ($m === 'GET') { $w = ["v.status='active'"]; $p = [];
 $u = need_role('vendor'); $own = my_vendor_id($u);
 function owned(int $id, ?int $own): array { $f = q('SELECT * FROM foods WHERE id=?', [$id])->fetch(); if (!$f || ($own !== null && (int)$f['vendor_id'] !== $own)) fail('Food item not found.', 404); return $f; }
 function cat_ok(?int $cid, int $vid): ?int { if (!$cid) return null; if (!q('SELECT 1 FROM categories WHERE id=? AND (vendor_id IS NULL OR vendor_id=?)', [$cid, $vid])->fetch()) fail('Invalid category.', 422, ['category_id' => 'Not available for this vendor.']); return $cid; }
-if ($m === 'POST' && ($_GET['action'] ?? '') === 'image') { $f = owned(id(), $own); $file = $_FILES['image'] ?? null;
-  if (!$file || $file['error'] !== UPLOAD_ERR_OK) fail('Choose an image to upload.', 422);
-  if ($file['size'] > cfg('upload_max')) fail('Image must be 2 MB or smaller.', 422);
-  $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']); $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'][$mime] ?? null;
-  if (!$ext || !getimagesize($file['tmp_name'])) fail('Only JPG, PNG or WebP images are allowed.', 422);
-  $name = bin2hex(random_bytes(12)) . ".$ext"; if (!move_uploaded_file($file['tmp_name'], __DIR__ . '/../uploads/foods/' . $name)) fail('Could not save the image.', 500);
+if ($m === 'POST' && ($_GET['action'] ?? '') === 'image') { $f = owned(id(), $own);
+  $name = save_resized_image($_FILES['image'] ?? null, __DIR__ . '/../uploads/foods', 800);
   if ($f['image']) @unlink(__DIR__ . '/../uploads/foods/' . basename($f['image']));
   q('UPDATE foods SET image=? WHERE id=?', [$name, $f['id']]); respond(['image' => $name]); }
 $b = body();

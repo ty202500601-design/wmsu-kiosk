@@ -1,68 +1,68 @@
 /* Admin pages */
-const A=PAGES.admin, PN={cash:'Cash',gcash:'GCash',maya:'Maya'};
-const vname=(vs,id)=>esc(vs.find(v=>v.id===id)?.name||'-');
-const tgl=(t,id,s,a,b,n='')=>`<button class="btn btn-sm btn-light" data-act="aset" data-t="${t}" data-id="${id}" data-s="${s==='active'?b:a}" data-n="${esc(n)}"><i class="bi bi-${s==='active'?'slash-circle':'check-circle'}"></i> ${s==='active'?(t==='users'?'Ban':'Suspend'):'Activate'}</button>`;
-const del=(t,id)=>`<button class="btn btn-sm btn-light text-danger" data-act="adel" data-t="${t}" data-id="${id}"><i class="bi bi-trash"></i> Delete</button>`;
+const A = PAGES.admin, PN = { cash: 'Cash', gcash: 'GCash' };
+const vname = (vs, id) => esc(vs.find(v => v.id === id)?.name || '-');
+const tgl = (t, id, s, a, b, n = '') => `<button class="btn btn-sm btn-light" data-act="aset" data-t="${t}" data-id="${id}" data-s="${s === 'active' ? b : a}" data-n="${esc(n)}"><i class="bi bi-${s === 'active' ? 'slash-circle' : 'check-circle'}"></i> ${s === 'active' ? (t === 'users' ? 'Ban' : 'Suspend') : 'Activate'}</button>`;
+const del = (t, id) => `<button class="btn btn-sm btn-light text-danger" data-act="adel" data-t="${t}" data-id="${id}"><i class="bi bi-trash"></i> Delete</button>`;
 
-const BAN_REASONS=['Spam / Fake Orders','Abusive Behavior','Policy Violation','Fraudulent Activity','Other'];
-acts.aset=async d=>{
-  if(d.t==='users'&&d.s==='banned'){
-    const el=document.createElement('div');el.className='modal fade';
-    el.innerHTML=`<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate><div class="modal-header"><h5 class="modal-title fw-bold text-danger"><i class="bi bi-slash-circle me-1"></i> Ban User${d.n?': '+esc(d.n):''}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p class="small text-muted mb-3">Select one or more reasons for banning this user. This reason will be recorded in their moderation status.</p><div class="mb-3">${BAN_REASONS.map((r,i)=>`<div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="reasons" value="${esc(r)}" id="br_${i}"><label class="form-check-label fw-semibold" for="br_${i}">${esc(r)}</label></div>`).join('')}</div><div class="mb-2"><label class="form-label small">Custom Details <span class="text-muted fw-normal">(optional, required if "Other" is checked)</span></label><textarea name="custom" class="form-control form-control-sm" rows="2" maxlength="200" placeholder="Add specific details or incident notes..."></textarea></div><div class="text-danger small d-none" id="banErr"></div></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger px-4">Confirm Ban</button></div></form></div>`;
-    document.body.append(el);const m=new bootstrap.Modal(el);
-    el.querySelector('form').onsubmit=async e=>{
+const BAN_REASONS = ['Spam / Fake Orders', 'Abusive Behavior', 'Policy Violation', 'Fraudulent Activity', 'Other'];
+acts.aset = async d => {
+  if (d.t === 'users' && d.s === 'banned') {
+    const el = document.createElement('div'); el.className = 'modal fade';
+    el.innerHTML = `<div class="modal-dialog modal-dialog-centered"><form class="modal-content" novalidate><div class="modal-header"><h5 class="modal-title fw-bold text-danger"><i class="bi bi-slash-circle me-1"></i> Ban User${d.n ? ': ' + esc(d.n) : ''}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><p class="small text-muted mb-3">Select one or more reasons for banning this user. This reason will be recorded in their moderation status.</p><div class="mb-3">${BAN_REASONS.map((r, i) => `<div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="reasons" value="${esc(r)}" id="br_${i}"><label class="form-check-label fw-semibold" for="br_${i}">${esc(r)}</label></div>`).join('')}</div><div class="mb-2"><label class="form-label small">Custom Details <span class="text-muted fw-normal">(optional, required if "Other" is checked)</span></label><textarea name="custom" class="form-control form-control-sm" rows="2" maxlength="200" placeholder="Add specific details or incident notes..."></textarea></div><div class="text-danger small d-none" id="banErr"></div></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger px-4">Confirm Ban</button></div></form></div>`;
+    document.body.append(el); const m = new bootstrap.Modal(el);
+    el.querySelector('form').onsubmit = async e => {
       e.preventDefault();
-      const checked=[...el.querySelectorAll('input[name="reasons"]:checked')].map(c=>c.value);
-      const custom=el.querySelector('textarea[name="custom"]').value.trim();
-      const err=el.querySelector('#banErr');
-      if(!checked.length&&!custom){err.textContent='Select at least one ban reason or enter custom details.';err.classList.remove('d-none');return}
-      if(checked.includes('Other')&&!custom){err.textContent='Please enter custom details when "Other" is selected.';err.classList.remove('d-none');return}
-      const list=checked.filter(r=>r!=='Other');
-      let reason=list.join(', ');
-      if(custom)reason=reason?`${reason} — ${custom}`:custom;
-      reason=reason.slice(0,255);
-      const btn=el.querySelector('button.btn-danger');btn.disabled=true;
-      try{await API.save('users',{id:+d.id,status:'banned',ban_reason:reason});m.hide();toast('User banned','success');refresh()}
-      catch(x){err.textContent=x.message;err.classList.remove('d-none');btn.disabled=false}
+      const checked = [...el.querySelectorAll('input[name="reasons"]:checked')].map(c => c.value);
+      const custom = el.querySelector('textarea[name="custom"]').value.trim();
+      const err = el.querySelector('#banErr');
+      if (!checked.length && !custom) { err.textContent = 'Select at least one ban reason or enter custom details.'; err.classList.remove('d-none'); return }
+      if (checked.includes('Other') && !custom) { err.textContent = 'Please enter custom details when "Other" is selected.'; err.classList.remove('d-none'); return }
+      const list = checked.filter(r => r !== 'Other');
+      let reason = list.join(', ');
+      if (custom) reason = reason ? `${reason} — ${custom}` : custom;
+      reason = reason.slice(0, 255);
+      const btn = el.querySelector('button.btn-danger'); btn.disabled = true;
+      try { await API.save('users', { id: +d.id, status: 'banned', ban_reason: reason }); m.hide(); toast('User banned', 'success'); refresh() }
+      catch (x) { err.textContent = x.message; err.classList.remove('d-none'); btn.disabled = false }
     };
-    el.addEventListener('hidden.bs.modal',()=>el.remove());
+    el.addEventListener('hidden.bs.modal', () => el.remove());
     m.show();
     return;
   }
-  if(await confirmBox(d.t==='users'&&d.s==='active'?'Reactivate this user account?':'Change this status?','Yes, change')){await API.save(d.t,{id:+d.id,status:d.s});toast('Status updated','success');refresh()}
+  if (await confirmBox(d.t === 'users' && d.s === 'active' ? 'Reactivate this user account?' : 'Change this status?', 'Yes, change')) { await API.save(d.t, { id: +d.id, status: d.s }); toast('Status updated', 'success'); refresh() }
 };
-acts.adel=async d=>{if(await confirmBox('Delete permanently? This cannot be undone.','Delete')){await API.remove(d.t,+d.id);toast('Deleted');refresh()}};
+acts.adel = async d => { if (await confirmBox('Delete permanently? This cannot be undone.', 'Delete')) { await API.remove(d.t, +d.id); toast('Deleted'); refresh() } };
 
-A.login=async v=>loginPage('admin',v);
+A.login = async v => loginPage('admin', v);
 
-A.dashboard=async v=>{
-  const [os,vs,r]=await Promise.all([API.list('orders'),API.list('vendors'),API.report('dashboard')]),total=Object.values(r.orders_by_status).reduce((a,b)=>a+ +b,0);
-  v.innerHTML=`
+A.dashboard = async v => {
+  const [os, vs, r] = await Promise.all([API.list('orders'), API.list('vendors'), API.report('dashboard')]), total = Object.values(r.orders_by_status).reduce((a, b) => a + +b, 0);
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Canteen Overview</h4>
       <p class="text-muted small mb-0">Live metrics across users, vendors, and transactions.</p>
     </div>
     <div class="row g-3 mb-4">
-      ${stat('people','Total users',r.total_users)
-        +stat('shop','Active vendors',r.total_vendors)
-        +stat('receipt','Total orders',total)
-        +stat('cash-stack','Total sales (paid)',peso(r.total_sales))}
+      ${stat('people', 'Total users', r.total_users)
+    + stat('shop', 'Active vendors', r.total_vendors)
+    + stat('receipt', 'Total orders', total)
+    + stat('cash-stack', 'Total sales (paid)', peso(r.total_sales))}
     </div>
     <h5 class="fw-bold mb-3">Recent Transactions</h5>
     ${table([
-      ['Order',o=>`<b>#${esc(o.no)}</b>${o.code?`<br><small class="text-wmsu fw-semibold">Track: ${esc(o.code)}</small>`:'<br><small class="text-muted">Pending</small>'}`],
-      ['Vendor',o=>vname(vs,o.vendorId)],
-      ['Method',o=>PN[o.pay]||esc(o.pay)],
-      ['Amount',o=>`<strong class="text-wmsu">${peso(o.total)}</strong>`],
-      ['Payment',o=>badge(o.payStatus)],
-      ['Status',o=>badge(o.status)],
-      ['Date',o=>fmt(o.time)]
-    ],os.slice(0,6))}`;
+      ['Order', o => `<b>#${esc(o.no)}</b>${o.code ? `<br><small class="text-wmsu fw-semibold">Track: ${esc(o.code)}</small>` : '<br><small class="text-muted">Pending</small>'}`],
+      ['Vendor', o => vname(vs, o.vendorId)],
+      ['Method', o => PN[o.pay] || esc(o.pay)],
+      ['Amount', o => `<strong class="text-wmsu">${peso(o.total)}</strong>`],
+      ['Payment', o => badge(o.payStatus)],
+      ['Status', o => badge(o.status)],
+      ['Date', o => fmt(o.time)]
+    ], os.slice(0, 6))}`;
 };
 
-A.users=async v=>{
-  const us=await API.list('users');
-  v.innerHTML=`
+A.users = async v => {
+  const us = await API.list('users');
+  v.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-4">
       <div>
         <h4 class="fw-bold mb-1">User Management</h4>
@@ -71,26 +71,26 @@ A.users=async v=>{
       <button class="btn btn-wmsu" data-act="addU"><i class="bi bi-person-plus"></i> Add User</button>
     </div>
     ${table([
-      ['Name',u=>`<b>${esc(u.name)}</b>`],
-      ['Email',u=>esc(u.email)],
-      ['Role',u=>`<span class="badge-status badge-neutral">${esc(u.role)}</span>`],
-      ['Status',u=>`${badge(u.status)}${u.status==='banned'&&u.ban_reason?`<div class="small text-danger mt-1"><i class="bi bi-exclamation-circle me-1"></i>${esc(u.ban_reason)}</div>`:''}${u.status==='banned'&&u.banned_at?`<div class="text-muted" style="font-size:.72rem">Banned ${fmt(when(u.banned_at))}</div>`:''}`],
-      ['',u=>`<div class="d-flex gap-1 justify-content-end">${tgl('users',u.id,u.status,'active','banned',u.name)} ${del('users',u.id)}</div>`]
-    ],us)}`;
+    ['Name', u => `<b>${esc(u.name)}</b>`],
+    ['Email', u => esc(u.email)],
+    ['Role', u => `<span class="badge-status badge-neutral">${esc(u.role)}</span>`],
+    ['Status', u => `${badge(u.status)}${u.status === 'banned' && u.ban_reason ? `<div class="small text-danger mt-1"><i class="bi bi-exclamation-circle me-1"></i>${esc(u.ban_reason)}</div>` : ''}${u.status === 'banned' && u.banned_at ? `<div class="text-muted" style="font-size:.72rem">Banned ${fmt(when(u.banned_at))}</div>` : ''}`],
+    ['', u => `<div class="d-flex gap-1 justify-content-end">${tgl('users', u.id, u.status, 'active', 'banned', u.name)} ${del('users', u.id)}</div>`]
+  ], us)}`;
 };
-acts.addU=async()=>{
-  const r=await modal('Add user',`
+acts.addU = async () => {
+  const r = await modal('Add user', `
     <div class="mb-3"><label class="form-label">Full Name</label><input name="name" class="form-control" placeholder="Full name" minlength="2" required></div>
     <div class="mb-3"><label class="form-label">Email Address</label><input type="email" name="email" class="form-control" placeholder="email@wmsu.edu.ph" required></div>
     <div class="mb-3"><label class="form-label">Password</label><input type="password" name="password" class="form-control" placeholder="8+ characters, letters and numbers" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,72}" required></div>
     <div class="mb-3"><label class="form-label">Account Role</label><select name="role" class="form-select"><option value="admin">Admin</option></select></div>
-  `,'Add user');
-  if(r){await API.save('users',r);toast('User added','success');refresh()}
+  `, 'Add user');
+  if (r) { await API.save('users', r); toast('User added', 'success'); refresh() }
 };
 
-A.vendors=async v=>{
-  const vs=(await API.list('vendors')).filter(x=>['active','suspended'].includes(x.status));
-  v.innerHTML=`
+A.vendors = async v => {
+  const vs = (await API.list('vendors')).filter(x => ['active', 'suspended'].includes(x.status));
+  v.innerHTML = `
     <div class="d-flex justify-content-between align-items-center mb-4">
       <div>
         <h4 class="fw-bold mb-1">Campus Vendors</h4>
@@ -99,57 +99,47 @@ A.vendors=async v=>{
       <button class="btn btn-wmsu" data-act="addV"><i class="bi bi-plus-lg"></i> Add Vendor</button>
     </div>
     ${table([
-      ['Stall',x=>`${x.emoji} <b>${esc(x.name)}</b>`],
-      ['Owner / Email',x=>`${esc(x.owner)}<br><small class="text-muted">${esc(x.email)}</small>`],
-      ['Phone',x=>esc(x.phone)],
-      ['E-Wallet',x=>{
-        const hasG=!!String(x.gcashNumber||'').trim(), hasM=!!String(x.mayaNumber||'').trim();
-        return (hasG||hasM)?`<span class="badge-status badge-success">Registered</span><br><small class="text-muted">${[hasG?'GCash':'',hasM?'Maya':''].filter(Boolean).join(' · ')}</small>`:'<span class="badge-status badge-neutral">Not Registered</span>';
-      }],
-      ['Status',x=>badge(x.status)],
-      ['',x=>`<div class="d-flex gap-1 justify-content-end"><button class="btn btn-sm btn-light" data-act="viewV" data-id="${x.id}"><i class="bi bi-eye"></i> Details</button> ${tgl('vendors',x.id,x.status,'active','suspended')} ${del('vendors',x.id)}</div>`]
-    ],vs)}`;
+    ['Stall', x => `${x.emoji} <b>${esc(x.name)}</b>`],
+    ['Owner / Email', x => `${esc(x.owner)}<br><small class="text-muted">${esc(x.email)}</small>`],
+    ['Phone', x => esc(x.phone)],
+    ['E-Wallet', x => {
+      const hasG = !!String(x.gcashNumber || '').trim();
+      return hasG ? '<span class="badge-status badge-success">GCash Registered</span>' : '<span class="badge-status badge-neutral">Not Registered</span>';
+    }],
+    ['Status', x => badge(x.status)],
+    ['', x => `<div class="d-flex gap-1 justify-content-end"><button class="btn btn-sm btn-light" data-act="viewV" data-id="${x.id}"><i class="bi bi-eye"></i> Details</button> ${tgl('vendors', x.id, x.status, 'active', 'suspended')} ${del('vendors', x.id)}</div>`]
+  ], vs)}`;
 };
-acts.viewV=async d=>{
-  const x=(await API.list('vendors')).find(v=>v.id===+d.id);
-  if(!x)return toast('Vendor not found.','danger');
-  const hasG=!!String(x.gcashNumber||'').trim(), hasM=!!String(x.mayaNumber||'').trim();
-  const el=document.createElement('div');el.className='modal fade';
-  el.innerHTML=`<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-shop text-wmsu me-1"></i> ${esc(x.name)}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
+acts.viewV = async d => {
+  const x = (await API.list('vendors')).find(v => v.id === +d.id);
+  if (!x) return toast('Vendor not found.', 'danger');
+  const hasG = !!String(x.gcashNumber || '').trim(), hasM = !!String(x.mayaNumber || '').trim();
+  const el = document.createElement('div'); el.className = 'modal fade';
+  el.innerHTML = `<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-shop text-wmsu me-1"></i> ${esc(x.name)}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">
     <div class="row g-3 mb-3 small">
       <div class="col-sm-6"><b>Owner:</b> ${esc(x.owner)}<br><b>Email:</b> ${esc(x.email)}<br><b>Phone:</b> ${esc(x.phone)}</div>
-      <div class="col-sm-6"><b>Status:</b> ${badge(x.status)} ${badge(x.open?'Open now':'Closed')}<br><div class="mt-1 text-muted">${esc(x.desc||'No description.')}</div></div>
+      <div class="col-sm-6"><b>Status:</b> ${badge(x.status)} ${badge(x.open ? 'Open now' : 'Closed')}<br><div class="mt-1 text-muted">${esc(x.desc || 'No description.')}</div></div>
     </div>
     <div class="card bg-light p-3 mb-3">
-      <h6 class="fw-bold mb-2"><i class="bi bi-wallet2 text-wmsu me-1"></i> E-Wallet Registration Status</h6>
-      <div class="row g-2 small">
-        <div class="col-sm-6">
-          <div class="p-2 bg-white rounded border">
-            <div class="d-flex justify-content-between align-items-center mb-1"><b>GCash</b> ${hasG?'<span class="badge-status badge-success">Registered</span>':'<span class="badge-status badge-neutral">Not Registered</span>'}</div>
-            ${hasG?`<div>${esc(x.gcashNumber)}</div><div class="text-muted">${esc(x.gcashName||'-')}</div>`:'<div class="text-muted">GCash will be unavailable for this vendor at checkout.</div>'}
-          </div>
-        </div>
-        <div class="col-sm-6">
-          <div class="p-2 bg-white rounded border">
-            <div class="d-flex justify-content-between align-items-center mb-1"><b>Maya</b> ${hasM?'<span class="badge-status badge-success">Registered</span>':'<span class="badge-status badge-neutral">Not Registered</span>'}</div>
-            ${hasM?`<div>${esc(x.mayaNumber)}</div><div class="text-muted">${esc(x.mayaName||'-')}</div>`:'<div class="text-muted">Maya will be unavailable for this vendor at checkout.</div>'}
-          </div>
-        </div>
+      <h6 class="fw-bold mb-2"><i class="bi bi-wallet2 text-wmsu me-1"></i> GCash Registration Status</h6>
+      <div class="p-2 bg-white rounded border small">
+        <div class="d-flex justify-content-between align-items-center mb-1"><b>GCash</b> ${hasG ? '<span class="badge-status badge-success">Registered</span>' : '<span class="badge-status badge-neutral">Not Registered</span>'}</div>
+        ${hasG ? `<div>${esc(x.gcashNumber)}</div><div class="text-muted">${esc(x.gcashName || '-')}</div>` : '<div class="text-muted">GCash is unavailable for this vendor at checkout.</div>'}
       </div>
     </div>
     <div class="card bg-light p-3">
       <h6 class="fw-bold mb-2"><i class="bi bi-image text-wmsu me-1"></i> Canteen Banner</h6>
       <div>
-        ${x.banner?`<img src="${esc(x.banner)}" alt="Banner" style="width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`:'<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No canteen banner uploaded</div>'}
+        ${x.banner ? `<img src="${esc(x.banner)}" alt="Banner" style="width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">` : '<div class="text-center py-4 bg-white rounded border text-muted small"><i class="bi bi-image fs-3 d-block mb-1 opacity-50"></i>No canteen banner uploaded</div>'}
       </div>
     </div>
   </div><div class="modal-footer"><button type="button" class="btn btn-wmsu px-4" data-bs-dismiss="modal">Close</button></div></div></div>`;
-  document.body.append(el);const m=new bootstrap.Modal(el);
-  el.addEventListener('hidden.bs.modal',()=>el.remove());
+  document.body.append(el); const m = new bootstrap.Modal(el);
+  el.addEventListener('hidden.bs.modal', () => el.remove());
   m.show();
 };
-acts.addV=async()=>{
-  const r=await modal('Add Vendor Account',`
+acts.addV = async () => {
+  const r = await modal('Add Vendor Account', `
     <div class="mb-2"><label class="form-label">Stall / Business Name</label><input name="stall_name" class="form-control" placeholder="e.g. Aling Nena's Kitchen" minlength="2" maxlength="100" required><div class="invalid-feedback">Enter stall name (2-100 chars).</div></div>
     <div class="mb-2"><label class="form-label">Owner Full Name</label><input name="owner_name" class="form-control" placeholder="e.g. Maria Santos" minlength="2" maxlength="100" required><div class="invalid-feedback">Enter owner name (2-100 chars).</div></div>
     <div class="mb-2"><label class="form-label">Stall Description <span class="text-muted fw-normal">(optional)</span></label><input name="description" class="form-control" placeholder="e.g. Filipino rice meals and silog" maxlength="255"></div>
@@ -162,11 +152,11 @@ acts.addV=async()=>{
       <div class="col-sm-6"><label class="form-label small">GCash Number <span class="text-muted fw-normal">(optional)</span></label><input name="gcash_number" class="form-control form-control-sm" placeholder="0917 123 4567"></div>
       <div class="col-sm-6"><label class="form-label small">GCash Account Name</label><input name="gcash_name" class="form-control form-control-sm" placeholder="Account name"></div>
     </div>
-  `,'Create Vendor');
-  if(!r)return;
-  await API.save('vendors',r);
-  toast('Vendor account created & activated','success');
-  await modal('Vendor Account Created',`
+  `, 'Create Vendor');
+  if (!r) return;
+  await API.save('vendors', r);
+  toast('Vendor account created & activated', 'success');
+  await modal('Vendor Account Created', `
     <div class="alert alert-success small mb-3"><i class="bi bi-check-circle-fill me-1"></i> <b>${esc(r.stall_name)}</b> is now active and ready to sign in.</div>
     <p class="small text-muted mb-2">Hand off these credentials to the vendor:</p>
     <div class="card bg-light p-3 small mb-2">
@@ -180,112 +170,112 @@ acts.addV=async()=>{
         <button type="button" class="btn btn-sm btn-light" data-act="copy" data-v="${esc(r.password)}"><i class="bi bi-clipboard"></i> Copy</button>
       </div>
     </div>
-  `,'Done','btn-wmsu',false);
+  `, 'Done', 'btn-wmsu', false);
   refresh();
 };
 
-A.applications=async v=>{
-  const ap=await API.list('applications');
-  v.innerHTML=`
+A.applications = async v => {
+  const ap = await API.list('applications');
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Vendor Applications</h4>
       <p class="text-muted small mb-0">Review registration requests submitted by prospective food stalls.</p>
     </div>
     ${table([
-      ['Stall',a=>`<b>${esc(a.stall)}</b>`],
-      ['Owner',a=>esc(a.owner)],
-      ['Contact',a=>`${esc(a.email)}<br><small class="text-muted">${esc(a.phone)}</small>`],
-      ['Status',a=>badge(a.status)],
-      ['',a=>a.status==='pending'?`<div class="d-flex gap-1 justify-content-end"><button class="btn btn-sm btn-success" data-act="appr" data-id="${a.id}" data-ok="1"><i class="bi bi-check-lg"></i> Approve</button> <button class="btn btn-sm btn-outline-danger" data-act="appr" data-id="${a.id}"><i class="bi bi-x-lg"></i> Reject</button></div>`:badge(a.status)]
-    ],ap,'No applications to review.')}`;
+    ['Stall', a => `<b>${esc(a.stall)}</b>`],
+    ['Owner', a => esc(a.owner)],
+    ['Contact', a => `${esc(a.email)}<br><small class="text-muted">${esc(a.phone)}</small>`],
+    ['Status', a => badge(a.status)],
+    ['', a => a.status === 'pending' ? `<div class="d-flex gap-1 justify-content-end"><button class="btn btn-sm btn-success" data-act="appr" data-id="${a.id}" data-ok="1"><i class="bi bi-check-lg"></i> Approve</button> <button class="btn btn-sm btn-outline-danger" data-act="appr" data-id="${a.id}"><i class="bi bi-x-lg"></i> Reject</button></div>` : badge(a.status)]
+  ], ap, 'No applications to review.')}`;
 };
-acts.appr=async d=>{
-  const ap=(await API.list('applications')).find(a=>a.id===+d.id);
-  if(!ap)return;
-  if(!await confirmBox(`${d.ok?'Approve':'Reject'} application from ${esc(ap.stall)}?`,d.ok?'Approve':'Reject'))return;
-  await API.save('applications',{id:ap.id,status:d.ok?'approved':'rejected'});
-  toast('Application '+(d.ok?'approved':'rejected'),'success');
+acts.appr = async d => {
+  const ap = (await API.list('applications')).find(a => a.id === +d.id);
+  if (!ap) return;
+  if (!await confirmBox(`${d.ok ? 'Approve' : 'Reject'} application from ${esc(ap.stall)}?`, d.ok ? 'Approve' : 'Reject')) return;
+  await API.save('applications', { id: ap.id, status: d.ok ? 'approved' : 'rejected' });
+  toast('Application ' + (d.ok ? 'approved' : 'rejected'), 'success');
   refresh();
 };
 
-A.foods=async v=>{
-  const [fs,vs,cs]=await Promise.all(['foods','vendors','categories'].map(t=>API.list(t)));
-  v.innerHTML=`
+A.foods = async v => {
+  const [fs, vs, cs] = await Promise.all(['foods', 'vendors', 'categories'].map(t => API.list(t)));
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">All Food Items</h4>
       <p class="text-muted small mb-0">Read-only inspection of menu items across all registered stalls.</p>
     </div>
     ${table([
-      ['Item',f=>`${f.emoji} <b>${esc(f.name)}</b>`],
-      ['Vendor',f=>vname(vs,f.vendorId)],
-      ['Category',f=>esc(cs.find(c=>c.id===f.catId)?.name||'-')],
-      ['Price',f=>peso(f.price)],
-      ['Status',f=>badge(f.available?'active':'suspended').replace('suspended','unavailable')]
-    ],fs)}`;
+    ['Item', f => `${f.emoji} <b>${esc(f.name)}</b>`],
+    ['Vendor', f => vname(vs, f.vendorId)],
+    ['Category', f => esc(cs.find(c => c.id === f.catId)?.name || '-')],
+    ['Price', f => peso(f.price)],
+    ['Status', f => badge(f.available ? 'active' : 'suspended').replace('suspended', 'unavailable')]
+  ], fs)}`;
 };
 
-A.categories=async v=>catPage(v);
+A.categories = async v => catPage(v);
 
-A.orders=async v=>{
-  const f=qs.get('s')||'all',[os,vs]=await Promise.all([API.list('orders'),API.list('vendors')]);
-  v.innerHTML=`
+A.orders = async v => {
+  const f = qs.get('s') || 'all', [os, vs] = await Promise.all([API.list('orders'), API.list('vendors')]);
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Orders</h4>
       <p class="text-muted small mb-0">Track and monitor all orders across campus food stalls.</p>
     </div>
     <div class="pills mb-4">
-      ${['all','pending','preparing','ready','completed','rejected'].map(s=>`<a class="pill text-decoration-none ${s===f?'active':''}" href="?s=${s}">${s[0].toUpperCase()+s.slice(1)}</a>`).join('')}
+      ${['all', 'pending', 'preparing', 'ready', 'completed', 'rejected'].map(s => `<a class="pill text-decoration-none ${s === f ? 'active' : ''}" href="?s=${s}">${s[0].toUpperCase() + s.slice(1)}</a>`).join('')}
     </div>
     ${table([
-      ['Order',o=>`<b>#${esc(o.no)}</b>${o.code?`<br><small class="text-wmsu fw-semibold">Track: ${esc(o.code)}</small>`:'<br><small class="text-muted">Pending</small>'}`],
-      ['Vendor',o=>vname(vs,o.vendorId)],
-      ['Customer',o=>esc(o.customer)],
-      ['Items',o=>o.items.reduce((s,i)=>s+i.qty,0)+' item(s)'],
-      ['Total',o=>`<strong class="text-wmsu">${peso(o.total)}</strong>`],
-      ['Payment',o=>badge(o.payStatus)],
-      ['Status',o=>badge(o.status)],
-      ['Date',o=>fmt(o.time)]
-    ],os.filter(o=>f==='all'||o.status===f))}`;
+    ['Order', o => `<b>#${esc(o.no)}</b>${o.code ? `<br><small class="text-wmsu fw-semibold">Track: ${esc(o.code)}</small>` : '<br><small class="text-muted">Pending</small>'}`],
+    ['Vendor', o => vname(vs, o.vendorId)],
+    ['Customer', o => esc(o.customer)],
+    ['Items', o => o.items.reduce((s, i) => s + i.qty, 0) + ' item(s)'],
+    ['Total', o => `<strong class="text-wmsu">${peso(o.total)}</strong>`],
+    ['Payment', o => badge(o.payStatus)],
+    ['Status', o => badge(o.status)],
+    ['Date', o => fmt(o.time)]
+  ], os.filter(o => f === 'all' || o.status === f))}`;
 };
 
-A.payments=async v=>{
-  const [ps,vs]=await Promise.all([API.list('payments'),API.list('vendors')]);
-  v.innerHTML=`
+A.payments = async v => {
+  const [ps, vs] = await Promise.all([API.list('payments'), API.list('vendors')]);
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Payments & Transaction Log</h4>
       <p class="text-muted small mb-0">Read-only audit log of customer-vendor payments and references.</p>
     </div>
     ${table([
-      ['Order',p=>`<b>#${esc(p.no)}</b>`],
-      ['Vendor',p=>vname(vs,p.vendorId)],
-      ['Method',p=>PN[p.method]||esc(p.method)],
-      ['Amount',p=>`<strong class="text-wmsu">${peso(p.amount)}</strong>`],
-      ['Reference',p=>p.ref?`<code>${esc(p.ref)}</code>`:'<span class="text-muted">-</span>'],
-      ['Status',p=>badge(p.status)]
-    ],ps,'No payments yet.')}`;
+    ['Order', p => `<b>#${esc(p.no)}</b>`],
+    ['Vendor', p => vname(vs, p.vendorId)],
+    ['Method', p => PN[p.method] || esc(p.method)],
+    ['Amount', p => `<strong class="text-wmsu">${peso(p.amount)}</strong>`],
+    ['Reference', p => p.ref ? `<code>${esc(p.ref)}</code>` : '<span class="text-muted">-</span>'],
+    ['Status', p => badge(p.status)]
+  ], ps, 'No payments yet.')}`;
 };
 
-A.reports=async v=>{
-  const r=await API.report('sales'),n=+r.totals.orders,s=+r.totals.sales;
-  v.innerHTML=`
+A.reports = async v => {
+  const r = await API.report('sales'), n = +r.totals.orders, s = +r.totals.sales;
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">Sales & Revenue Reports</h4>
       <p class="text-muted small mb-0">Financial metrics, stall breakdown, and payment analytics.</p>
     </div>
     <div class="row g-3 mb-4">
-      ${stat('cash-stack','Total sales (paid orders)',peso(s))
-        +stat('receipt','Paid orders',n)
-        +stat('calculator','Average order',peso(n?s/n:0))}
+      ${stat('cash-stack', 'Total sales (paid orders)', peso(s))
+    + stat('receipt', 'Paid orders', n)
+    + stat('calculator', 'Average order', peso(n ? s / n : 0))}
     </div>
     <div class="row g-4">
-      <div class="col-lg-6"><div class="card p-4"><h5 class="fw-bold mb-3">Sales by Vendor</h5>${bars(r.by_vendor.map(x=>[x.name,+x.sales]))}</div></div>
-      <div class="col-lg-6"><div class="card p-4"><h5 class="fw-bold mb-3">Sales by Payment Method</h5>${bars(r.by_method.map(x=>[PN[x.method]||x.method,+x.sales]))}</div></div>
+      <div class="col-lg-6"><div class="card p-4"><h5 class="fw-bold mb-3">Sales by Vendor</h5>${bars(r.by_vendor.map(x => [x.name, +x.sales]))}</div></div>
+      <div class="col-lg-6"><div class="card p-4"><h5 class="fw-bold mb-3">Sales by Payment Method</h5>${bars(r.by_method.map(x => [PN[x.method] || x.method, +x.sales]))}</div></div>
     </div>`;
 };
 
-A.settings=async v=>{
-  const s=(await API.list('settings'))[0];
-  v.innerHTML=`
+A.settings = async v => {
+  const s = (await API.list('settings'))[0];
+  v.innerHTML = `
     <div class="mb-4">
       <h4 class="fw-bold mb-1">System Settings</h4>
       <p class="text-muted small mb-0">Operating hours and active campus payment gateways.</p>
@@ -299,19 +289,15 @@ A.settings=async v=>{
       <label class="form-label mb-2">Accepted Payment Methods</label>
       <div class="card bg-light p-3 mb-4">
         <div class="form-check form-switch mb-2">
-          <input class="form-check-input" type="checkbox" id="pay_cash" name="cash" ${s.cash?'checked':''}>
+          <input class="form-check-input" type="checkbox" id="pay_cash" name="cash" ${s.cash ? 'checked' : ''}>
           <label class="form-check-label fw-semibold" for="pay_cash">Cash at Counter</label>
         </div>
-        <div class="form-check form-switch mb-2">
-          <input class="form-check-input" type="checkbox" id="pay_gcash" name="gcash" ${s.gcash?'checked':''}>
-          <label class="form-check-label fw-semibold" for="pay_gcash">GCash</label>
-        </div>
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="pay_maya" name="maya" ${s.maya?'checked':''}>
-          <label class="form-check-label fw-semibold" for="pay_maya">Maya</label>
+          <input class="form-check-input" type="checkbox" id="pay_gcash" name="gcash" ${s.gcash ? 'checked' : ''}>
+          <label class="form-check-label fw-semibold" for="pay_gcash">GCash (Automated Checkout)</label>
         </div>
       </div>
       <div><button class="btn btn-wmsu px-4">Save Settings</button></div>
     </form>`;
-  onForm('#sf',async d=>{await API.save('settings',{id:1,canteen:d.canteen,open:d.open,close:d.close,...Object.fromEntries(Object.keys(PN).map(k=>[k,!!d[k]]))});toast('Settings saved','success')});
+  onForm('#sf', async d => { await API.save('settings', { id: 1, canteen: d.canteen, open: d.open, close: d.close, ...Object.fromEntries(Object.keys(PN).map(k => [k, !!d[k]])) }); toast('Settings saved', 'success') });
 };

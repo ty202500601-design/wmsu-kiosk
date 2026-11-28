@@ -21,13 +21,7 @@ if (in_array($act, ['banner', 'qr'], true)) {
   if (!$v) fail('Vendor not found.', 404);
   if ($m === 'POST') {
     $file = $_FILES[$act] ?? $_FILES['image'] ?? null;
-    if (!$file || $file['error'] !== UPLOAD_ERR_OK) fail('Choose an image to upload.', 422);
-    if ($file['size'] > cfg('upload_max')) fail('Image must be 2 MB or smaller.', 422);
-    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
-    $ext = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'][$mime] ?? null;
-    if (!$ext || !getimagesize($file['tmp_name'])) fail('Only JPG, PNG or WebP images are allowed.', 422);
-    $name = bin2hex(random_bytes(12)) . ".$ext";
-    if (!move_uploaded_file($file['tmp_name'], __DIR__ . "/../uploads/$dir/" . $name)) fail('Could not save the image.', 500);
+    $name = save_resized_image($file, __DIR__ . "/../uploads/$dir", $act === 'qr' ? 600 : 1200);
     if (!empty($v[$col])) @unlink(__DIR__ . "/../uploads/$dir/" . basename($v[$col]));
     q("UPDATE vendors SET $col=? WHERE id=?", [$name, $id]);
     audit("vendor.$act", "id=$id");

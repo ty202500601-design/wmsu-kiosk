@@ -27,6 +27,7 @@
 }
 
 /* Base reset & typography */
+html { scroll-padding-top: 84px; }
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -184,11 +185,11 @@ a:hover { color: var(--red-d); }
 .badge-preparing::before { background: #3b82f6; }
 
 .badge-ready {
-  background: #faf5ff;
-  color: #6b21a8;
-  border-color: #e9d5ff;
+  background: #f0fdfa;
+  color: #0f766e;
+  border-color: #99f6e4;
 }
-.badge-ready::before { background: #a855f7; }
+.badge-ready::before { background: #14b8a6; }
 
 .badge-success {
   background: #ecfdf5;
@@ -323,7 +324,10 @@ a:hover { color: var(--red-d); }
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform .35s var(--ease);
 }
+.vcard:hover .vcard-banner img { transform: scale(1.03); }
+.vcard.is-open { cursor: pointer; }
 .vcard-avatar {
   width: 64px;
   height: 64px;
@@ -405,7 +409,9 @@ a:hover { color: var(--red-d); }
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform .35s var(--ease);
 }
+.fcard:hover .fimg img { transform: scale(1.03); }
 .fimg.big {
   height: 320px;
   font-size: 9rem;
@@ -500,6 +506,10 @@ input:checked + .opt {
   border-color: var(--red);
   background: var(--red-l);
   box-shadow: 0 0 0 1px var(--red);
+}
+input:focus-visible + .opt {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
 }
 .opt.disabled {
   opacity: 0.58;
@@ -875,11 +885,11 @@ input:checked + .opt {
 .search-bar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
 .search-box { position: relative; flex: 1 1 320px; max-width: 560px; }
 .search-input { width: 100%; height: 48px; padding: 0 5.2rem 0 2.8rem; font-size: .95rem; font-family: var(--font-body); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-sm); transition: border-color var(--dur), box-shadow var(--dur); -webkit-appearance: none; appearance: none; }
-.search-input::placeholder { color: #94a3b8; }
+.search-input::placeholder { color: #64748b; }
 .search-input:hover { border-color: #cbd5e1; }
 .search-input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 4px rgba(138, 28, 43, .1); }
 .search-input::-webkit-search-cancel-button { display: none; }
-.search-ico { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; transition: color var(--dur); }
+.search-ico { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; transition: color var(--dur); }
 .search-box:focus-within .search-ico { color: var(--red); }
 .search-clear { position: absolute; right: 2.6rem; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; border: 0; border-radius: 50%; background: #f1f5f9; color: var(--mut); font-size: .7rem; display: grid; place-items: center; cursor: pointer; transition: background var(--dur), color var(--dur); }
 .search-clear[hidden] { display: none; }
@@ -897,3 +907,11 @@ input:checked + .opt {
 .pw-toggle:hover { background: var(--red-l); color: var(--red); }
 .pw-toggle:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
 .pw-wrap .was-validated .form-control:invalid, .was-validated .pw-wrap .form-control:invalid { background-image: none; }
+
+/* Sticky bottom cart bar & fluid CSS grids */
+.cartbar:not(:empty) { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); width: min(560px, calc(100% - 1.5rem)); z-index: 30; animation: fadeUp .25s var(--ease) both; }
+.cartbar .btn { border-radius: 14px; padding: .85rem 1.25rem; box-shadow: 0 12px 28px rgba(138, 28, 43, .28); }
+body[data-role="customer"] main { padding-bottom: 5.5rem !important; }
+.vendor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.25rem; }
+.menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.15rem; }
+.cat-section-title { font-size: 1.08rem; font-weight: 700; display: flex; align-items: center; gap: .45rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
